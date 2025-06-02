@@ -1,4 +1,6 @@
 
+using Microsoft.EntityFrameworkCore;
+
 namespace SarasBloggAPI
 {
     public class Program
@@ -8,6 +10,11 @@ namespace SarasBloggAPI
             var builder = WebApplication.CreateBuilder(args);
 
             // Add services to the container.
+
+            var connectionString = builder.Configuration.GetConnectionString("MyConnection");
+            builder.Services.AddDbContext<Models.MyDbContext>(options =>
+                options.UseSqlServer(connectionString));
+            builder.Services.AddTransient<DAL.CommentsManager>();
 
             builder.Services.AddControllers();
             // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle

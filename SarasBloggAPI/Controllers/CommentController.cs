@@ -1,4 +1,6 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
+using SarasBloggAPI.DAL;
 
 namespace SarasBloggAPI.Controllers
 {
@@ -6,50 +8,44 @@ namespace SarasBloggAPI.Controllers
     [Route("api/[controller]")]
     public class CommentController : ControllerBase
     {
-        [HttpGet] // Hämtar alla
-        public List<Models.Comment> GetAllComments()
+        private readonly DAL.CommentsManager _commentsManager;
+
+        public CommentController(CommentsManager commentsManager)
         {
-            //// Simulera att vi hämtar kommentarer från en databas
-            //if(DAL.CommentManager.GetComments().Count == 0)
-            //{
-            //    var comment = new Models.Comment
-            //    {
-            //        Id = 1,
-            //        Name = "Patrik",
-            //        Email = "putte@puttson.com",
-            //        Content = "Hej hej",
-            //        CreatedAt = DateTime.UtcNow,
-            //        BloggId = 30
-            //    };
-            //    DAL.CommentManager.CreateComment(comment);
-            //    // ta bort ovan när allt är på sin plats
-            //}
-            return DAL.CommentManager.GetComments();
+            _commentsManager = commentsManager;
+        }
+
+        [HttpGet] // Hämtar alla
+        public async Task<List<Models.Comment>> GetAllCommentsAsync()
+        {
+            var comments = await _commentsManager.GetCommentsAsync();
+            return comments;
         }
 
         [HttpGet("{id}")] // Hämta per id
-        public Models.Comment GetComment(int id)
+        public async Task<Models.Comment> GetComment(int id)
         {
-            return DAL.CommentManager.GetComment(id);
+            var comment = await _commentsManager.GetCommentAsync(id);
+            return comment;
         }
 
         [HttpPost]
-        public void PostComment([FromBody] Models.Comment comment)
+        public async Task PostComment([FromBody] Models.Comment comment)
         {
-            DAL.CommentManager.CreateComment(comment);
+            await _commentsManager.CreateCommentAsync(comment);
+        }
+
+
+        [HttpDelete("{id}")]
+        public async Task DeleteComment(int id)
+        {
+            await _commentsManager.DeleteComment(id);
         }
 
         //[HttpPut("{id}")]
-        //public void PutTransaction(int id, [FromBody] Models.Comment comment)
+        //public async Task PutTransaction(int id, [FromBody] Models.Comment comment)
         //{
-        //    DAL.CommentManager.UpdateComment(id, comment);
+        //    await _commentsManager.UpdateCommentAsync(id, comment);
         //}
-
-        [HttpDelete("{id}")]
-        public void DeleteComment(int id)
-        {
-            DAL.CommentManager.DeleteComment(id);
-        }
-
     }
 }
