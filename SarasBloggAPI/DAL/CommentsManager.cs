@@ -37,6 +37,16 @@ namespace SarasBloggAPI.DAL
             }
         }
 
+        public async Task DeleteComments(int bloggId)
+        {
+            var existingComments = await _context.Comments.Where(c => c.BloggId == bloggId).ToListAsync();
+            if (existingComments.Any())
+            {
+                _context.Comments.RemoveRange(existingComments);
+                await _context.SaveChangesAsync();
+            }
+        }
+
         //public async Task UpdateCommentAsync(int id, Models.Comment comment)
         //{
         //    var existingComment = await _context.Comments.FirstOrDefaultAsync(c => c.Id == id);

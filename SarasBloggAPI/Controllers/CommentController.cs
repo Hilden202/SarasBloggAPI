@@ -22,7 +22,7 @@ namespace SarasBloggAPI.Controllers
             return comments;
         }
 
-        [HttpGet("{id}")] // Hämta per id
+        [HttpGet("ById/{id}")] // Hämta per id
         public async Task<Models.Comment> GetComment(int id)
         {
             var comment = await _commentsManager.GetCommentAsync(id);
@@ -36,10 +36,16 @@ namespace SarasBloggAPI.Controllers
         }
 
 
-        [HttpDelete("{id}")]
+        [HttpDelete("ById/{id}")]
         public async Task DeleteComment(int id)
         {
             await _commentsManager.DeleteComment(id);
+        }
+
+        [HttpDelete("ByBlogg/{bloggId}")]
+        public async Task DeleteComments(int bloggId)
+        {
+            await _commentsManager.DeleteComments(bloggId);
         }
 
         //[HttpPut("{id}")]
