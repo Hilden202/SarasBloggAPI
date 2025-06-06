@@ -14,7 +14,7 @@ namespace SarasBloggAPI
             var connectionString = builder.Configuration.GetConnectionString("MyConnection");
             builder.Services.AddDbContext<Models.MyDbContext>(options =>
                 options.UseSqlServer(connectionString));
-            builder.Services.AddTransient<DAL.CommentsManager>();
+            builder.Services.AddTransient<DAL.CommentManager>();
 
             builder.Services.AddControllers();
             // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle

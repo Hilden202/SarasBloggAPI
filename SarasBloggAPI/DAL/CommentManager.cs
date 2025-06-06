@@ -1,44 +1,65 @@
-﻿using System.Security.Cryptography.X509Certificates;
+﻿using Microsoft.EntityFrameworkCore;
 
 namespace SarasBloggAPI.DAL
 {
-    public static class CommentManager
+    public class CommentManager
     {
-        // databasemodell
-        private static List<Models.Comment> Comments { get; set; } = new List<Models.Comment>();
+        private readonly Models.MyDbContext _context;
 
-        public static List<Models.Comment> GetComments()
+        public CommentManager(Models.MyDbContext context)
         {
-            return Comments;
+            _context = context;
         }
 
-        public static Models.Comment GetComment(int id)
+        public async Task<List<Models.Comment>> GetCommentsAsync()
         {
-            return Comments.Where(c => c.Id == id).SingleOrDefault();
+            return await _context.Comments.ToListAsync();
         }
 
-        public static void CreateComment(Models.Comment comment)
+        public async Task<Models.Comment?> GetCommentAsync(int id)
         {
-            comment.Id = Comments.Count + 1;
-            Comments.Add(comment);
+            return await _context.Comments.FirstOrDefaultAsync(c => c.Id == id);
         }
 
-        //public static void UpdateComment(int id, Models.Comment comment)
+        public async Task CreateCommentAsync(Models.Comment comment)
+        {
+            await _context.Comments.AddAsync(comment);
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task DeleteComment(int id)
+        {
+            var existingComment = await _context.Comments.FirstOrDefaultAsync(c => c.Id == id);
+            if (existingComment != null)
+            {
+                _context.Comments.Remove(existingComment);
+                await _context.SaveChangesAsync();
+            }
+        }
+
+        public async Task DeleteComments(int bloggId)
+        {
+            var existingComments = await _context.Comments.Where(c => c.BloggId == bloggId).ToListAsync();
+            if (existingComments.Any())
+            {
+                _context.Comments.RemoveRange(existingComments);
+                await _context.SaveChangesAsync();
+            }
+        }
+
+        //public async Task UpdateCommentAsync(int id, Models.Comment comment)
         //{
-        //    var existingComment = Comments.Where(c => c.Id == id).FirstOrDefault();
-        //    if(existingComment != null)
+        //    var existingComment = await _context.Comments.FirstOrDefaultAsync(c => c.Id == id);
+        //    if (existingComment != null)
         //    {
         //        existingComment.Name = comment.Name;
         //        existingComment.Email = comment.Email;
         //        existingComment.Content = comment.Content;
         //        existingComment.CreatedAt = comment.CreatedAt;
+        //        await _context.SaveChangesAsync();
         //    }
         //}
 
-        public static void DeleteComment(int id)
-        {
-            var existingComment = Comments.Where(c => c.Id == id).FirstOrDefault();
-            Comments.Remove(existingComment);
-        }
+
     }
 }

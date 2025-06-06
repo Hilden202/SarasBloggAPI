@@ -8,50 +8,50 @@ namespace SarasBloggAPI.Controllers
     [Route("api/[controller]")]
     public class CommentController : ControllerBase
     {
-        private readonly DAL.CommentsManager _commentsManager;
+        private readonly DAL.CommentManager _commentManager;
 
-        public CommentController(CommentsManager commentsManager)
+        public CommentController(CommentManager commentManager)
         {
-            _commentsManager = commentsManager;
+            _commentManager = commentManager;
         }
 
         [HttpGet] // Hämtar alla
         public async Task<List<Models.Comment>> GetAllCommentsAsync()
         {
-            var comments = await _commentsManager.GetCommentsAsync();
+            var comments = await _commentManager.GetCommentsAsync();
             return comments;
         }
 
         [HttpGet("ById/{id}")] // Hämta per id
         public async Task<Models.Comment> GetComment(int id)
         {
-            var comment = await _commentsManager.GetCommentAsync(id);
+            var comment = await _commentManager.GetCommentAsync(id);
             return comment;
         }
 
         [HttpPost]
         public async Task PostComment([FromBody] Models.Comment comment)
         {
-            await _commentsManager.CreateCommentAsync(comment);
+            await _commentManager.CreateCommentAsync(comment);
         }
 
 
         [HttpDelete("ById/{id}")]
         public async Task DeleteComment(int id)
         {
-            await _commentsManager.DeleteComment(id);
+            await _commentManager.DeleteComment(id);
         }
 
         [HttpDelete("ByBlogg/{bloggId}")]
         public async Task DeleteComments(int bloggId)
         {
-            await _commentsManager.DeleteComments(bloggId);
+            await _commentManager.DeleteComments(bloggId);
         }
 
         //[HttpPut("{id}")]
         //public async Task PutTransaction(int id, [FromBody] Models.Comment comment)
         //{
-        //    await _commentsManager.UpdateCommentAsync(id, comment);
+        //    await _commentManager.UpdateCommentAsync(id, comment);
         //}
     }
 }
