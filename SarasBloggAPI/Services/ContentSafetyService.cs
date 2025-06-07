@@ -30,7 +30,7 @@ namespace SarasBloggAPI.Services
                     IDENTITY_ATTACK = new { },
                     INSULT = new { }
                 },
-                languages = new[] { "en" }
+                languages = new[] { "en", "sv" }
             };
 
             var json = JsonSerializer.Serialize(requestBody);
@@ -39,17 +39,14 @@ namespace SarasBloggAPI.Services
 
             if (!response.IsSuccessStatusCode)
             {
-                // Log or handle error here  
                 return false;
             }
 
             var jsonString = await response.Content.ReadAsStringAsync();
 
-            // We can create a custom model for the response matching Perspective API  
             var result = JsonSerializer.Deserialize<PerspectiveApiResponse>(jsonString);
 
-            // Interpret scores - we can set a threshold value, e.g., 0.7  
-            const double threshold = 0.7;
+            const double threshold = 0.7; // finns även skala 0.5 stoppar allt och 0.9 släpper igenom nästan allt
 
             bool isSafe = true;
             if (result?.AttributeScores != null)

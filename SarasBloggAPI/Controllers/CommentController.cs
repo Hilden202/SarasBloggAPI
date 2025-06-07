@@ -37,24 +37,17 @@ namespace SarasBloggAPI.Controllers
         {
             try
             {
-                // Kolla att kommentaren inte är null eller tom
-                if (comment == null || string.IsNullOrWhiteSpace(comment.Content))
-                    return BadRequest("Kommentar kan inte vara tom.");
-
-                // Analysera kommentaren med ContentSafetyService
                 bool isSafe = await _contentSafetyService.IsContentSafeAsync(comment.Content);
 
                 if (!isSafe)
                     return BadRequest("Kommentaren bedömdes som osäker och kan inte publiceras.");
 
-                // Spara kommentaren via CommentManager
                 await _commentManager.CreateCommentAsync(comment);
 
                 return Ok(); // 200 OK
             }
             catch (Exception ex)
             {
-                // Logga eventuellt ex.Message här om du har loggning
                 return StatusCode(500, "Ett fel inträffade vid hantering av kommentaren.");
             }
         }
