@@ -1,5 +1,6 @@
 
 using Microsoft.EntityFrameworkCore;
+using SarasBloggAPI.Services;
 
 namespace SarasBloggAPI
 {
@@ -20,6 +21,10 @@ namespace SarasBloggAPI
             // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
+
+            builder.Services.AddSingleton<IConfiguration>(builder.Configuration);
+            builder.Services.AddHttpClient<ContentSafetyService>();
+
 
             var app = builder.Build();
 
