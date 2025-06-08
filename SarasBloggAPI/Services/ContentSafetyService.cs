@@ -46,7 +46,7 @@ namespace SarasBloggAPI.Services
 
             var result = JsonSerializer.Deserialize<PerspectiveApiResponse>(jsonString);
 
-            const double threshold = 0.7; // finns även skala 0.5 stoppar allt och 0.9 släpper igenom nästan allt
+            const double threshold = 0.9; // finns även skala 0.5 stoppar allt, 0.7 medel och 0.9 släpper igenom nästan allt
 
             bool isSafe = true;
             if (result?.AttributeScores != null)
