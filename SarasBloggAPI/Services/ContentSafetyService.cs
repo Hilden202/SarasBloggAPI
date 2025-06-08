@@ -25,7 +25,7 @@ namespace SarasBloggAPI.Services
                 requestedAttributes = new
                 {
                     TOXICITY = new { },
-                    SEXUALLY_EXPLICIT = new { },
+                    //SEXUALLY_EXPLICIT = new { }, /fungerade inte då jag la till sv så valde att ta utesluta denna.
                     THREAT = new { },
                     IDENTITY_ATTACK = new { },
                     INSULT = new { }
@@ -39,6 +39,10 @@ namespace SarasBloggAPI.Services
 
             if (!response.IsSuccessStatusCode)
             {
+                // För tidigare felsökning.
+                //var errorContent = await response.Content.ReadAsStringAsync();
+                //System.Diagnostics.Debug.WriteLine("ERROR FROM GOOGLE:");
+                //System.Diagnostics.Debug.WriteLine(errorContent); // Visa varför det blev 400
                 return false;
             }
 
@@ -46,7 +50,7 @@ namespace SarasBloggAPI.Services
 
             var result = JsonSerializer.Deserialize<PerspectiveApiResponse>(jsonString);
 
-            const double threshold = 0.9; // finns även skala 0.5 stoppar allt, 0.7 medel och 0.9 släpper igenom nästan allt
+            const double threshold = 0.8; // finns skala 0.5 stoppar allt, 0.7 medel och 0.9 släpper igenom nästan allt
 
             bool isSafe = true;
             if (result?.AttributeScores != null)
