@@ -37,9 +37,13 @@ namespace SarasBloggAPI.Controllers
         {
             try
             {
-                bool isSafe = await _contentSafetyService.IsContentSafeAsync(comment.Content);
+                bool isNameSafe = await _contentSafetyService.IsContentSafeAsync(comment.Name);
+                bool isContentSafe = await _contentSafetyService.IsContentSafeAsync(comment.Content);
 
-                if (!isSafe)
+                if (!isNameSafe)
+                    return BadRequest("Namnet innehåller otillåtet språk.");
+
+                if (!isContentSafe)
                     return BadRequest("Kommentaren bedömdes som osäker och kan inte publiceras.");
 
                 await _commentManager.CreateCommentAsync(comment);
