@@ -1,12 +1,13 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using SarasBloggAPI.Data;
 
 namespace SarasBloggAPI.DAL
 {
     public class CommentManager
     {
-        private readonly Models.MyDbContext _context;
+        private readonly MyDbContext _context;
 
-        public CommentManager(Models.MyDbContext context)
+        public CommentManager(MyDbContext context)
         {
             _context = context;
         }

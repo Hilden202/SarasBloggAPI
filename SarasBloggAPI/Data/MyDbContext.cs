@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using SarasBloggAPI.Models;
 
-namespace SarasBloggAPI.Models
+namespace SarasBloggAPI.Data
 {
     public class MyDbContext : DbContext
     {
@@ -8,6 +9,8 @@ namespace SarasBloggAPI.Models
         {
 
         }
+
+        public DbSet<Blogg> Bloggs { get; set; }
 
         public DbSet<Comment> Comments { get; set; }
     }
