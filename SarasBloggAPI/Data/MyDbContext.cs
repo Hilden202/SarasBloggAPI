@@ -13,5 +13,7 @@ namespace SarasBloggAPI.Data
         public DbSet<Blogg> Bloggs { get; set; }
 
         public DbSet<Comment> Comments { get; set; }
+
+        public DbSet<ForbiddenWord> ForbiddenWords { get; set; }
     }
 }
