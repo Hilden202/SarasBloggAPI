@@ -20,6 +20,9 @@ namespace SarasBloggAPI
             builder.Services.AddScoped<BloggManager>();
             builder.Services.AddScoped<CommentManager>();
             builder.Services.AddScoped<ForbiddenWordManager>();
+            builder.Services.AddScoped<AboutMeManager>();
+            builder.Services.AddScoped<ContactMeManager>();
+
 
             // HTTP-KLIENTER
             builder.Services.AddHttpClient<ContentSafetyService>();
