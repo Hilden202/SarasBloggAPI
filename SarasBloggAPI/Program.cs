@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using SarasBloggAPI.Data;
 using SarasBloggAPI.Services;
 using SarasBloggAPI.DAL;
+using Microsoft.AspNetCore.Identity;
 
 namespace SarasBloggAPI
 {
@@ -11,10 +12,14 @@ namespace SarasBloggAPI
         {
             var builder = WebApplication.CreateBuilder(args);
 
-            // DATABAS
+            // Databas & Identitetetskonfiguration
             var connectionString = builder.Configuration.GetConnectionString("MyConnection");
             builder.Services.AddDbContext<MyDbContext>(options =>
                 options.UseSqlServer(connectionString));
+
+            builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
+                .AddEntityFrameworkStores<MyDbContext>()
+                .AddDefaultTokenProviders();
 
             // MANAGERS / DAL
             builder.Services.AddScoped<BloggManager>();
@@ -22,6 +27,7 @@ namespace SarasBloggAPI
             builder.Services.AddScoped<ForbiddenWordManager>();
             builder.Services.AddScoped<AboutMeManager>();
             builder.Services.AddScoped<ContactMeManager>();
+            builder.Services.AddScoped<UserManagerService>();
 
 
             // HTTP-KLIENTER
