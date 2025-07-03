@@ -102,18 +102,25 @@ namespace SarasBloggAPI.DAL
             var user = await _userManager.FindByIdAsync(userId);
             if (user == null) return false;
 
+            // OBS: admin@sarasblogg.se spärras INTE här – vi vill tillåta fler roller även om de inte visas som klickbara i frontend.
             var result = await _userManager.AddToRoleAsync(user, roleName);
             return result.Succeeded;
         }
+
+
 
         public async Task<bool> RemoveUserFromRoleAsync(string userId, string roleName)
         {
             var user = await _userManager.FindByIdAsync(userId);
             if (user == null) return false;
 
+            if (user.Email?.ToLower() == "admin@sarasblogg.se")
+                return false; // Förhindrar att ta bort roller från admin
+
             var result = await _userManager.RemoveFromRoleAsync(user, roleName);
             return result.Succeeded;
         }
+
 
     }
 }

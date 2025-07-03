@@ -44,26 +44,29 @@ namespace SarasBloggAPI.Controllers
                 return NotFound();
 
             if (user.Email.ToLower() == "admin@sarasblogg.se")
-                return BadRequest("Denna användare kan inte tas bort.");
+                return BadRequest("❌ Denna användare kan inte tas bort.");
 
             var result = await _userManagerService.DeleteUserAsync(id);
-            return result ? Ok() : BadRequest("Borttagning misslyckades.");
+            return result ? Ok() : BadRequest("❌ Borttagning misslyckades.");
         }
-
-
 
         [HttpPost("{id}/add-role/{roleName}")]
         public async Task<IActionResult> AddRole(string id, string roleName)
         {
             var success = await _userManagerService.AddUserToRoleAsync(id, roleName);
-            return success ? Ok() : NotFound();
+            return success ? Ok() : BadRequest("❌ Kunde inte lägga till rollen.");
         }
 
         [HttpDelete("{id}/remove-role/{roleName}")]
         public async Task<IActionResult> RemoveRole(string id, string roleName)
         {
+            var user = await _userManagerService.GetUserByIdAsync(id);
+            if (user?.Email?.ToLower() == "admin@sarasblogg.se")
+                return BadRequest("❌ Det går inte att ta bort roller från admin@sarasblogg.se.");
+
             var success = await _userManagerService.RemoveUserFromRoleAsync(id, roleName);
-            return success ? Ok() : NotFound();
+            return success ? Ok() : BadRequest("❌ Kunde inte ta bort rollen.");
         }
+
     }
 }
