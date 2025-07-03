@@ -36,6 +36,22 @@ namespace SarasBloggAPI.Controllers
             return Ok(roles);
         }
 
+        [HttpDelete("delete/{id}")]
+        public async Task<IActionResult> DeleteUser(string id)
+        {
+            var user = await _userManagerService.GetUserByIdAsync(id);
+            if (user == null)
+                return NotFound();
+
+            if (user.Email.ToLower() == "admin@sarasblogg.se")
+                return BadRequest("Denna användare kan inte tas bort.");
+
+            var result = await _userManagerService.DeleteUserAsync(id);
+            return result ? Ok() : BadRequest("Borttagning misslyckades.");
+        }
+
+
+
         [HttpPost("{id}/add-role/{roleName}")]
         public async Task<IActionResult> AddRole(string id, string roleName)
         {
