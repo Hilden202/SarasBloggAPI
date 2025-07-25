@@ -36,10 +36,18 @@ namespace SarasBloggAPI.Controllers
 
         // POST: api/blogg
         [HttpPost]
-        public async Task<ActionResult<Blogg>> Create([FromBody] Blogg blogg)
+        public async Task<IActionResult> Create([FromBody] Blogg blogg)
         {
-            var created = await _BloggManager.CreateAsync(blogg);
-            return CreatedAtAction(nameof(Get), new { id = created.Id }, created);
+            try
+            {
+                var created = await _BloggManager.CreateAsync(blogg);
+                return CreatedAtAction(nameof(Get), new { id = created.Id }, created);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[API] Fel vid skapande av blogg: " + ex.Message);
+                return StatusCode(500, ex.Message); // Visa felet i frontend-loggen
+            }
         }
 
         // PUT: api/blogg/5
