@@ -252,7 +252,7 @@ namespace SarasBloggAPI.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("AboutMe");
+                    b.ToTable("AboutMe", (string)null);
                 });
 
             modelBuilder.Entity("SarasBloggAPI.Models.Blogg", b =>
@@ -295,7 +295,7 @@ namespace SarasBloggAPI.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Blogg");
+                    b.ToTable("Blogg", (string)null);
                 });
 
             modelBuilder.Entity("SarasBloggAPI.Models.Comment", b =>
@@ -325,7 +325,7 @@ namespace SarasBloggAPI.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Comments");
+                    b.ToTable("Comments", (string)null);
                 });
 
             modelBuilder.Entity("SarasBloggAPI.Models.ContactMe", b =>
@@ -357,7 +357,7 @@ namespace SarasBloggAPI.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("ContactMe");
+                    b.ToTable("ContactMe", (string)null);
                 });
 
             modelBuilder.Entity("SarasBloggAPI.Models.ForbiddenWord", b =>
@@ -374,7 +374,7 @@ namespace SarasBloggAPI.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("ForbiddenWords");
+                    b.ToTable("ForbiddenWords", (string)null);
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>

@@ -27,8 +27,10 @@ secrets.json
 *.log
 *.tmp
 
-# Entity Framework Migrations (om du använder EF)
-Data/Migrations/
+# 💾 Entity Framework (vi IGNORERAR INTE hela migrations-mappen längre)
+# Undantag om du inte vill ha stora auto-genererade filer
+#Data/Migrations/*.Designer.cs
+#Data/Migrations/*ModelSnapshot.cs
 
 # Rider / JetBrains filer
 .idea/
