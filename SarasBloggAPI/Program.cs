@@ -3,6 +3,8 @@ using SarasBloggAPI.Data;
 using SarasBloggAPI.Services;
 using SarasBloggAPI.DAL;
 using Microsoft.AspNetCore.Identity;
+using Npgsql.EntityFrameworkCore.PostgreSQL;
+
 
 namespace SarasBloggAPI
 {
@@ -14,8 +16,12 @@ namespace SarasBloggAPI
 
             // Databas & Identitetetskonfiguration
             var connectionString = builder.Configuration.GetConnectionString("MyConnection");
+            //builder.Services.AddDbContext<MyDbContext>(options =>
+            //    options.UseSqlServer(connectionString));
+
             builder.Services.AddDbContext<MyDbContext>(options =>
-                options.UseSqlServer(connectionString));
+                options.UseNpgsql(connectionString));
+
 
             builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
                 .AddEntityFrameworkStores<MyDbContext>()
