@@ -6,7 +6,7 @@ EXPOSE 80
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 COPY ["SarasBloggAPI.csproj", "./"]
-RUN dotnet restore "SarasBloggAPI/SarasBloggAPI.csproj"
+RUN dotnet restore "SarasBloggAPI.csproj"
 COPY . .
 WORKDIR "/src/SarasBloggAPI"
 RUN dotnet build "SarasBloggAPI.csproj" -c Release -o /app/build
