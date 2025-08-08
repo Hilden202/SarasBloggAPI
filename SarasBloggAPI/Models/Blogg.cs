@@ -12,7 +12,7 @@ namespace SarasBloggAPI.Models
         public string Title { get; set; } = "";
         public string Content { get; set; } = "";
         public string Author { get; set; } = "";
-        public string? Image { get; set; }
+        public ICollection<BloggImage>? Images { get; set; }
         public DateTime LaunchDate { get; set; }
         public bool IsArchived { get; set; } = false;
         public int ViewCount { get; set; }

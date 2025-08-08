@@ -28,7 +28,9 @@ namespace SarasBloggAPI
                 .AddDefaultTokenProviders();
 
             // MANAGERS / DAL
+            builder.Services.AddScoped<IFileHelper, GitHubFileHelper>();
             builder.Services.AddScoped<BloggManager>();
+            builder.Services.AddScoped<BloggImageManager>();
             builder.Services.AddScoped<CommentManager>();
             builder.Services.AddScoped<ForbiddenWordManager>();
             builder.Services.AddScoped<AboutMeManager>();

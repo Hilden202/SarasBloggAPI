@@ -22,5 +22,7 @@ namespace SarasBloggAPI.Data
 
         public DbSet<ContactMe> ContactMe { get; set; } = default!;
 
+        public DbSet<BloggImage> BloggImages { get; set; } = default!;
+
     }
 }
