@@ -4,6 +4,9 @@ using SarasBloggAPI.Services;
 using SarasBloggAPI.DAL;
 using Microsoft.AspNetCore.Identity;
 using Npgsql.EntityFrameworkCore.PostgreSQL;
+using Microsoft.AspNetCore.DataProtection;
+using System.IO;
+
 
 
 namespace SarasBloggAPI
@@ -28,6 +31,11 @@ namespace SarasBloggAPI
 
             Console.WriteLine($"[DEBUG] Using ConnectionString: {maskedConnectionString}");
 
+            // Lagra DataProtection-nycklar på en plats som överlever container-restart
+            builder.Services.AddDataProtection()
+                .PersistKeysToFileSystem(new DirectoryInfo("/app/keys"))
+                .SetApplicationName("SarasBloggSharedKeys");
+
             // Databas & Identitetetskonfiguration
             //var connectionString = builder.Configuration.GetConnectionString("MyConnection");
             //builder.Services.AddDbContext<MyDbContext>(options =>
@@ -35,7 +43,6 @@ namespace SarasBloggAPI
 
             builder.Services.AddDbContext<MyDbContext>(options =>
                 options.UseNpgsql(connectionString));
-
 
             builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
                 .AddEntityFrameworkStores<MyDbContext>()
