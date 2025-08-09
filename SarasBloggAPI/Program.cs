@@ -1,13 +1,10 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using SarasBloggAPI.Data;
 using SarasBloggAPI.Services;
 using SarasBloggAPI.DAL;
 using Microsoft.AspNetCore.Identity;
 using Npgsql.EntityFrameworkCore.PostgreSQL;
-using Microsoft.AspNetCore.DataProtection;
-using System.IO;
-
-
+using Microsoft.AspNetCore.HttpOverrides;
 
 namespace SarasBloggAPI
 {
@@ -17,30 +14,18 @@ namespace SarasBloggAPI
         {
             var builder = WebApplication.CreateBuilder(args);
 
-            // H�mta och logga connection string (st�der b�de DefaultConnection och MyConnection)
+            // Render/containers: bind PORT från env
+            var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+            builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+
+            // Hämta och logga connection string (stöder både DefaultConnection och MyConnection)
             var connectionString =
                 builder.Configuration.GetConnectionString("DefaultConnection")
                 ?? builder.Configuration.GetConnectionString("MyConnection")
                 ?? throw new InvalidOperationException(
                     "No connection string found. Expected 'DefaultConnection' or 'MyConnection'.");
 
-            // Maskera l�senordet innan loggning
-            var maskedConnectionString = System.Text.RegularExpressions.Regex.Replace(
-                connectionString, @"(Password\s*=\s*)([^;]+)", "$1***",
-                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-
-            Console.WriteLine($"[DEBUG] Using ConnectionString: {maskedConnectionString}");
-
-            // Lagra DataProtection-nycklar p� en plats som �verlever container-restart
-            builder.Services.AddDataProtection()
-                .PersistKeysToFileSystem(new DirectoryInfo("/app/keys"))
-                .SetApplicationName("SarasBloggSharedKeys");
-
             // Databas & Identitetetskonfiguration
-            //var connectionString = builder.Configuration.GetConnectionString("MyConnection");
-            //builder.Services.AddDbContext<MyDbContext>(options =>
-            //    options.UseSqlServer(connectionString));
-
             builder.Services.AddDbContext<MyDbContext>(options =>
                 options.UseNpgsql(connectionString));
 
@@ -58,7 +43,6 @@ namespace SarasBloggAPI
             builder.Services.AddScoped<ContactMeManager>();
             builder.Services.AddScoped<UserManagerService>();
 
-
             // HTTP-KLIENTER
             builder.Services.AddHttpClient<ContentSafetyService>();
             builder.Services.AddSingleton<IConfiguration>(builder.Configuration);
@@ -75,9 +59,25 @@ namespace SarasBloggAPI
             {
                 app.UseSwagger();
                 app.UseSwaggerUI();
+
+                // HTTPS-redirect bara i dev (valfritt)
+                app.UseHttpsRedirection();
+            }
+            else
+            {
+                // Viktigt bakom proxy (Render)
+                app.UseForwardedHeaders(new ForwardedHeadersOptions
+                {
+                    ForwardedHeaders = ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedFor
+                });
+
+                // Ingen app.UseHttpsRedirection() i prod på Render
             }
 
-            app.UseHttpsRedirection();
+            // TODO: Om vi börjar använda [Authorize] i API:t måste autentisering slås på här,
+            // och ligga FÖRE UseAuthorization():
+            // app.UseAuthentication();
+
             app.UseAuthorization();
             app.MapControllers();
 
