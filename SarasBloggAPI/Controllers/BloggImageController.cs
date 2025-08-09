@@ -71,7 +71,7 @@ namespace SarasBloggAPI.Controllers
 
             try
             {
-                var imageUrl = await _fileHelper.SaveImageAsync(dto.File, "uploads");
+                var imageUrl = await _fileHelper.SaveImageAsync(dto.File, dto.BloggId, "blogg");
 
                 var image = new BloggImage
                 {
@@ -136,6 +136,7 @@ namespace SarasBloggAPI.Controllers
         [HttpDelete("blogg/{bloggId}")]
         public async Task<IActionResult> DeleteImagesByBloggId(int bloggId)
         {
+            await _fileHelper.DeleteBlogFolderAsync(bloggId, "blogg");
             await _imageManager.DeleteImagesByBloggIdAsync(bloggId);
             return NoContent();
         }
