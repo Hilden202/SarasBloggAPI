@@ -47,7 +47,7 @@ namespace SarasBloggAPI.Controllers
                 return BadRequest("Ingen bild bifogad.");
 
             // ✅ Enkel validering: filtyp + MIME + storlek
-            const long MaxBytes = 5 * 1024 * 1024; // 5 MB
+            const long MaxBytes = 12 * 1024 * 1024; // 12 MB
             var allowedExt = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
 
