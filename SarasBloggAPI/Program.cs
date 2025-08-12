@@ -5,8 +5,8 @@ using SarasBloggAPI.DAL;
 using Microsoft.AspNetCore.Identity;
 using Npgsql.EntityFrameworkCore.PostgreSQL;
 using Microsoft.AspNetCore.HttpOverrides;
-using Npgsql;                 // 🔹 tillagd
-using System.Net.Sockets;     // 🔹 tillagd
+using Npgsql;
+using System.Net.Sockets;
 using Microsoft.Extensions.DependencyInjection;
 using HealthChecks.NpgSql;
 
@@ -187,6 +187,9 @@ namespace SarasBloggAPI
                     return Results.Problem(ex.Message);
                 }
             });
+
+            // 🔹 Root endpoint
+            app.MapGet("/", () => Results.Ok("SarasBloggAPI is running"));
 
             app.Run();
         }
