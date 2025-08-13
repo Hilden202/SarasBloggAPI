@@ -107,22 +107,76 @@ namespace SarasBloggAPI.Services
         // ---------- DELETE (singel-fil) ----------
         public async Task DeleteImageAsync(string imageUrl, string folder)
         {
-            if (string.IsNullOrWhiteSpace(imageUrl)) return;
+            if (string.IsNullOrWhiteSpace(imageUrl))
+                return;
 
-            var relativePath = ExtractRelativePath(imageUrl);
-            if (string.IsNullOrEmpty(relativePath)) return;
+            string relativePath = null;
 
-            var shaResp = await _httpClient.GetAsync(
-                $"https://api.github.com/repos/{_userName}/{_repository}/contents/{relativePath}?ref={_branch}");
-            if (!shaResp.IsSuccessStatusCode) return;
+            // Försök hitta path via _uploadFolder som innan
+            var marker = $"{_uploadFolder}/";
+            var start = imageUrl.IndexOf(marker, StringComparison.Ordinal);
+            if (start != -1)
+            {
+                relativePath = imageUrl.Substring(start);
+            }
+            else
+            {
+                // Fallback: Hantera gamla "raw.githubusercontent.com"-URL:er
+                try
+                {
+                    var uri = new Uri(imageUrl);
+                    var segments = uri.Segments
+                        .Select(s => s.Trim('/'))
+                        .Where(s => !string.IsNullOrEmpty(s))
+                        .ToArray();
 
-            using var doc = JsonDocument.Parse(await shaResp.Content.ReadAsStringAsync());
-            if (!doc.RootElement.TryGetProperty("sha", out var shaProp)) return;
+                    // Format: user / repo / branch / uploads / about / filename
+                    var branchIndex = Array.IndexOf(segments, _branch);
+                    if (branchIndex != -1 && branchIndex + 1 < segments.Length)
+                    {
+                        relativePath = string.Join('/', segments.Skip(branchIndex + 1));
+                    }
+                }
+                catch
+                {
+                    return; // Ogiltig URL → gör inget
+                }
+            }
+
+            if (string.IsNullOrEmpty(relativePath))
+                return;
+
+            // 🔹 Hämta SHA för filen
+            var shaUrl = $"https://api.github.com/repos/{_userName}/{_repository}/contents/{relativePath}?ref={_branch}";
+            var shaResponse = await _httpClient.GetAsync(shaUrl);
+            if (!shaResponse.IsSuccessStatusCode) return;
+
+            using var jsonDoc = JsonDocument.Parse(await shaResponse.Content.ReadAsStringAsync());
+            if (!jsonDoc.RootElement.TryGetProperty("sha", out var shaProp)) return;
 
             var sha = shaProp.GetString();
-            if (string.IsNullOrEmpty(sha)) return;
 
-            await DeleteByPathAndShaAsync(relativePath, sha);
+            var body = new
+            {
+                message = $"Delete {relativePath} via SarasBlogg",
+                sha = sha,
+                branch = _branch
+            };
+
+            var json = JsonSerializer.Serialize(body);
+            var deleteContent = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var deleteUrl = $"https://api.github.com/repos/{_userName}/{_repository}/contents/{relativePath}";
+            var deleteRequest = new HttpRequestMessage(HttpMethod.Delete, deleteUrl)
+            {
+                Content = deleteContent
+            };
+
+            var deleteResponse = await _httpClient.SendAsync(deleteRequest);
+            if (!deleteResponse.IsSuccessStatusCode)
+            {
+                Console.WriteLine($"[GitHub] Failed to delete image: {deleteResponse.StatusCode}");
+            }
         }
 
         // ---------- DELETE (hela blogg-mappen) ----------
@@ -216,8 +270,12 @@ namespace SarasBloggAPI.Services
             {
                 var uri = new Uri(imageUrl);
                 var segs = uri.Segments.Select(s => s.Trim('/')).ToArray();
-                // ["", user, repo, branch, ...path]
-                if (segs.Length >= 5) return string.Join('/', segs.Skip(4));
+                // ["", user, repo, branch, uploads, ...]
+                if (segs.Length >= 5)
+                {
+                    // hoppa över user, repo, branch
+                    return string.Join('/', segs.Skip(4));
+                }
             }
             else if (imageUrl.Contains("/repos/", StringComparison.OrdinalIgnoreCase)
                   && imageUrl.Contains("/contents/", StringComparison.OrdinalIgnoreCase))
@@ -233,5 +291,6 @@ namespace SarasBloggAPI.Services
             }
             return null;
         }
+
     }
 }

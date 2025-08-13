@@ -92,6 +92,7 @@ namespace SarasBloggAPI
             builder.Services.AddScoped<CommentManager>();
             builder.Services.AddScoped<ForbiddenWordManager>();
             builder.Services.AddScoped<AboutMeManager>();
+            builder.Services.AddScoped<IAboutMeImageService, AboutMeImageService>();
             builder.Services.AddScoped<ContactMeManager>();
             builder.Services.AddScoped<UserManagerService>();
 
@@ -131,9 +132,9 @@ namespace SarasBloggAPI
 
             // TODO: Om vi börjar använda [Authorize] i API:t måste autentisering slås på här,
             // och ligga FÖRE UseAuthorization():
-            // app.UseAuthentication();
+            //app.UseAuthorization();
 
-            app.UseAuthorization();
+            app.UseAuthentication();
 
             // 🔹 Vänta in DB & kör migreringar med exponentiell backoff (kallstart-safe)
             using (var scope = app.Services.CreateScope())
