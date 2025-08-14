@@ -9,6 +9,10 @@ using Npgsql;
 using System.Net.Sockets;
 using Microsoft.Extensions.DependencyInjection;
 using HealthChecks.NpgSql;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+
 
 namespace SarasBloggAPI
 {
@@ -86,6 +90,7 @@ namespace SarasBloggAPI
                 .AddDefaultTokenProviders();
 
             // MANAGERS / DAL
+            builder.Services.AddScoped<TokenService>();
             builder.Services.AddScoped<IFileHelper, GitHubFileHelper>();
             builder.Services.AddScoped<BloggManager>();
             builder.Services.AddScoped<BloggImageManager>();
@@ -98,7 +103,6 @@ namespace SarasBloggAPI
 
             // HTTP-KLIENTER
             builder.Services.AddHttpClient<ContentSafetyService>();
-            builder.Services.AddSingleton<IConfiguration>(builder.Configuration);
 
             // API-KOMPONENTER
             builder.Services.AddControllers();
@@ -107,6 +111,38 @@ namespace SarasBloggAPI
 
             // 🔹 Health checks (inkl. Postgres)
             builder.Services.AddHealthChecks().AddNpgSql(npgsqlCs);
+
+            // 🔐 JWT-config
+            var jwt = builder.Configuration.GetSection("Jwt");
+            var keyValue = jwt["Key"];
+            if (string.IsNullOrWhiteSpace(keyValue) || keyValue == "___SET_VIA_SECRETS_OR_ENV___")
+                throw new InvalidOperationException("Jwt:Key is missing. Set via user-secrets or environment (Jwt__Key).");
+
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(keyValue));
+
+            builder.Services
+                .AddAuthentication(o =>
+                {
+                    o.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                    o.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+                })
+                .AddJwtBearer(o =>
+                {
+                    o.TokenValidationParameters = new TokenValidationParameters
+                    {
+                        ValidIssuer = jwt["Issuer"],
+                        ValidAudience = jwt["Audience"],
+                        IssuerSigningKey = key,
+                        ValidateIssuerSigningKey = true,
+                        ValidateIssuer = true,
+                        ValidateAudience = true,
+                        ValidateLifetime = true,
+                        ClockSkew = TimeSpan.FromSeconds(30)
+                    };
+                });
+
+            builder.Services.AddAuthorization();
+
 
             var app = builder.Build();
 
@@ -130,11 +166,9 @@ namespace SarasBloggAPI
                 // Ingen app.UseHttpsRedirection() i prod på Render
             }
 
-            // TODO: Om vi börjar använda [Authorize] i API:t måste autentisering slås på här,
-            // och ligga FÖRE UseAuthorization():
-            //app.UseAuthorization();
-
             app.UseAuthentication();
+
+            app.UseAuthorization();
 
             // 🔹 Vänta in DB & kör migreringar med exponentiell backoff (kallstart-safe)
             using (var scope = app.Services.CreateScope())
