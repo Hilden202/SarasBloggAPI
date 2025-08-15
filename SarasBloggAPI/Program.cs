@@ -101,6 +101,9 @@ namespace SarasBloggAPI
             builder.Services.AddScoped<ContactMeManager>();
             builder.Services.AddScoped<UserManagerService>();
 
+            // E-POST
+            builder.Services.AddScoped<IEmailSender, DevEmailSender>();
+
             // HTTP-KLIENTER
             builder.Services.AddHttpClient<ContentSafetyService>();
 
