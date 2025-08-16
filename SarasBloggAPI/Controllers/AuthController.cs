@@ -182,4 +182,106 @@ public class AuthController : ControllerBase
 
         return Ok(new BasicResultDto { Succeeded = true, Message = "Email confirmed successfully" });
     }
+    // ---------- RESEND CONFIRMATION ----------
+    [AllowAnonymous]
+    [HttpPost("resend-confirmation")]
+    [Consumes("application/json")]
+    [ProducesResponseType(typeof(BasicResultDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<BasicResultDto>> ResendConfirmation([FromBody] EmailDto dto)
+    {
+        if (dto is null || string.IsNullOrWhiteSpace(dto.Email))
+            return Ok(new BasicResultDto { Succeeded = true, Message = "If the email exists, a confirmation link was sent." });
+
+        var user = await _userManager.FindByEmailAsync(dto.Email);
+        if (user is null || await _userManager.IsEmailConfirmedAsync(user))
+            return Ok(new BasicResultDto { Succeeded = true, Message = "If the email exists, a confirmation link was sent." });
+
+        var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+        var codeEncoded = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
+
+        var frontendBase = _cfg["Frontend:BaseUrl"] ?? "https://sarasblogg.onrender.com";
+        var confirmUrl = $"{frontendBase}/Identity/Account/ConfirmEmail?userId={user.Id}&code={codeEncoded}";
+
+        await _emailSender.SendAsync(
+            to: user.Email!,
+            subject: "Confirm your email",
+            htmlBody: $@"<p>Hej {user.UserName},</p>
+                     <p>Bekräfta din e-post genom att klicka här:</p>
+                     <p><a href=""{confirmUrl}"">Bekräfta e-post</a></p>");
+
+        var expose = _cfg.GetValue("Auth:ExposeConfirmLinkInResponse", true);
+        return Ok(new BasicResultDto
+        {
+            Succeeded = true,
+            Message = expose ? "Confirmation link generated (dev)." : "If the email exists, a confirmation link was sent.",
+            ConfirmEmailUrl = expose ? confirmUrl : null
+        });
+    }
+
+    // ---------- FORGOT PASSWORD ----------
+    [AllowAnonymous]
+    [HttpPost("forgot-password")]
+    [Consumes("application/json")]
+    [ProducesResponseType(typeof(BasicResultDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<BasicResultDto>> ForgotPassword([FromBody] EmailDto dto)
+    {
+        if (dto is null || string.IsNullOrWhiteSpace(dto.Email))
+            return Ok(new BasicResultDto { Succeeded = true, Message = "If the email exists, a reset link was sent." });
+
+        var user = await _userManager.FindByEmailAsync(dto.Email);
+        if (user is null || !await _userManager.IsEmailConfirmedAsync(user))
+            return Ok(new BasicResultDto { Succeeded = true, Message = "If the email exists, a reset link was sent." });
+
+        var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+        var tokenEncoded = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+
+        var frontendBase = _cfg["Frontend:BaseUrl"] ?? "https://sarasblogg.onrender.com";
+        var resetUrl = $"{frontendBase}/Identity/Account/ResetPassword?userId={user.Id}&token={tokenEncoded}";
+
+        await _emailSender.SendAsync(
+            to: user.Email!,
+            subject: "Återställ lösenord",
+            htmlBody: $@"<p>Hej {user.UserName},</p>
+                     <p>Klicka på länken för att återställa ditt lösenord:</p>
+                     <p><a href=""{resetUrl}"">Återställ lösenord</a></p>");
+
+        var expose = _cfg.GetValue("Auth:ExposeConfirmLinkInResponse", true);
+        return Ok(new BasicResultDto
+        {
+            Succeeded = true,
+            Message = expose ? "Reset link generated (dev)." : "If the email exists, a reset link was sent.",
+            ConfirmEmailUrl = expose ? resetUrl : null   // återanvänder fältet för dev-visning
+        });
+    }
+
+    // ---------- RESET PASSWORD ----------
+    [AllowAnonymous]
+    [HttpPost("reset-password")]
+    [Consumes("application/json")]
+    [ProducesResponseType(typeof(BasicResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(BasicResultDto), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<BasicResultDto>> ResetPassword([FromBody] ResetPasswordDto dto)
+    {
+        if (dto is null || string.IsNullOrWhiteSpace(dto.UserId) ||
+            string.IsNullOrWhiteSpace(dto.Token) || string.IsNullOrWhiteSpace(dto.NewPassword))
+        {
+            return BadRequest(new BasicResultDto { Succeeded = false, Message = "Invalid payload" });
+        }
+
+        var user = await _userManager.FindByIdAsync(dto.UserId);
+        if (user is null)
+            return BadRequest(new BasicResultDto { Succeeded = false, Message = "Invalid user" });
+
+        var tokenDecoded = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(dto.Token));
+        var result = await _userManager.ResetPasswordAsync(user, tokenDecoded, dto.NewPassword);
+
+        if (!result.Succeeded)
+        {
+            var msg = string.Join("; ", result.Errors.Select(e => $"{e.Code}: {e.Description}"));
+            return BadRequest(new BasicResultDto { Succeeded = false, Message = msg });
+        }
+
+        return Ok(new BasicResultDto { Succeeded = true, Message = "Password reset successfully" });
+    }
+
 }
