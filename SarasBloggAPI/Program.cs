@@ -102,7 +102,16 @@ namespace SarasBloggAPI
             builder.Services.AddScoped<UserManagerService>();
 
             // E-POST
-            builder.Services.AddScoped<IEmailSender, DevEmailSender>();
+            var emailMode = builder.Configuration["Email:Mode"] ?? "Dev";
+            if (emailMode.Equals("Prod", StringComparison.OrdinalIgnoreCase))
+            {
+                builder.Services.AddScoped<IEmailSender, SendGridEmailSender>();
+            }
+            else
+            {
+                builder.Services.AddScoped<IEmailSender, DevEmailSender>();
+            }
+
 
             // HTTP-KLIENTER
             builder.Services.AddHttpClient<ContentSafetyService>();
