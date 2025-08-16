@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Identity;
+﻿using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using SarasBloggAPI.Data;
 using SarasBloggAPI.DTOs;
@@ -29,6 +30,7 @@ namespace SarasBloggAPI.DAL
                     Id = user.Id,
                     Name = user.Name,
                     Email = user.Email,
+                    UserName = user.UserName ?? "",
                     Roles = (await _userManager.GetRolesAsync(user)).ToList()
                 };
 
@@ -51,8 +53,45 @@ namespace SarasBloggAPI.DAL
                 Id = user.Id,
                 Name = user.Name,
                 Email = user.Email,
+                UserName = user.UserName ?? "",
                 Roles = roles.ToList()
             };
+        }
+
+        public async Task<BasicResultDto> ChangeUserNameAsync(string userId, string newUserName)
+        {
+            // enkel policy – justera vid behov
+            if (!Regex.IsMatch(newUserName, "^[a-zA-Z0-9_.-]{3,30}$"))
+                return new BasicResultDto { Succeeded = false, Message = "Invalid username format." };
+
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user is null)
+                return new BasicResultDto { Succeeded = false, Message = "User not found." };
+
+            if ((user.Email ?? "").Equals("admin@sarasblogg.se", StringComparison.OrdinalIgnoreCase))
+                return new BasicResultDto { Succeeded = false, Message = "System user cannot be renamed." };
+
+            var exists = await _userManager.FindByNameAsync(newUserName);
+            if (exists is not null && exists.Id != user.Id)
+                return new BasicResultDto { Succeeded = false, Message = "Username already taken." };
+
+            var setRes = await _userManager.SetUserNameAsync(user, newUserName);
+            if (!setRes.Succeeded)
+                return new BasicResultDto
+                {
+                    Succeeded = false,
+                    Message = string.Join("; ", setRes.Errors.Select(e => e.Description))
+                };
+
+            var upd = await _userManager.UpdateAsync(user);
+            if (!upd.Succeeded)
+                return new BasicResultDto
+                {
+                    Succeeded = false,
+                    Message = string.Join("; ", upd.Errors.Select(e => e.Description))
+                };
+
+            return new BasicResultDto { Succeeded = true, Message = "Username updated." };
         }
 
         public async Task<bool> DeleteUserAsync(string userId)

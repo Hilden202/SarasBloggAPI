@@ -30,6 +30,7 @@
     {
         public bool Succeeded { get; set; }
         public string? Message { get; set; }
+        public string? ConfirmEmailUrl { get; set; }
     }
 }
 public sealed class ConfirmEmailRequestDto

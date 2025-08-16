@@ -33,7 +33,7 @@ public class AuthController : ControllerBase
         _emailSender = emailSender;
     }
 
-    // ---------- NYTT: REGISTER ----------
+    // ---------- REGISTER ----------
     [AllowAnonymous]
     [HttpPost("register")]
     [Consumes("application/json")]
@@ -68,13 +68,11 @@ public class AuthController : ControllerBase
             return BadRequest(new BasicResultDto { Succeeded = false, Message = msg });
         }
 
-        // Tilldela standardrollen "User" om den inte redan finns
         if (!await _userManager.IsInRoleAsync(user, "User"))
         {
             await _userManager.AddToRoleAsync(user, "User");
         }
 
-        // Skapa e-postbekräftelse
         var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
         var codeBytes = Encoding.UTF8.GetBytes(code);
         var codeEncoded = WebEncoders.Base64UrlEncode(codeBytes);
@@ -89,9 +87,15 @@ public class AuthController : ControllerBase
         );
 
         var expose = _cfg.GetValue("Auth:ExposeConfirmLinkInResponse", true);
-        var msgOk = expose ? $"User created. Confirm: {confirmUrl}" : "User created. Check your email.";
-        return Ok(new BasicResultDto { Succeeded = true, Message = msgOk });
+
+        return Ok(new BasicResultDto
+        {
+            Succeeded = true,
+            Message = expose ? "User created (dev mode)" : "User created. Check your email.",
+            ConfirmEmailUrl = expose ? confirmUrl : null
+        });
     }
+
 
     // ---------- LOGIN ----------
     [AllowAnonymous]
