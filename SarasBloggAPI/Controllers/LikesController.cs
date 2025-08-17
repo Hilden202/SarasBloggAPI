@@ -61,6 +61,5 @@ public class LikesController : ControllerBase
 
         var count = await _db.BloggLikes.CountAsync(l => l.BloggId == bloggId);
         return Ok(new LikeDto { BloggId = bloggId, UserId = userId, Count = count, Liked = false });
-
     }
 }
