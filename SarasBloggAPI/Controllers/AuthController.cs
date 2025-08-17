@@ -19,19 +19,24 @@ public class AuthController : ControllerBase
     private readonly TokenService _tokenService;
     private readonly IConfiguration _cfg;
     private readonly IEmailSender _emailSender;
+    private readonly ILogger<AuthController> _logger;
+
 
     public AuthController(SignInManager<ApplicationUser> signInManager,
                           UserManager<ApplicationUser> userManager,
                           TokenService tokenService,
                           IConfiguration cfg,
-                          IEmailSender emailSender)
+                          IEmailSender emailSender,
+                          ILogger<AuthController> logger)
     {
         _signInManager = signInManager;
         _userManager = userManager;
         _tokenService = tokenService;
         _cfg = cfg;
         _emailSender = emailSender;
+        _logger = logger;
     }
+
 
     // ---------- REGISTER ----------
     [AllowAnonymous]
@@ -80,20 +85,41 @@ public class AuthController : ControllerBase
         var frontendBase = _cfg["Frontend:BaseUrl"] ?? "https://sarasblogg.onrender.com";
         var confirmUrl = $"{frontendBase}/Identity/Account/ConfirmEmail?userId={user.Id}&code={codeEncoded}";
 
-        await _emailSender.SendAsync(
-            to: user.Email!,
-            subject: "Confirm your email",
-            htmlBody: $"<p>Hej! Bekräfta din e-post genom att klicka här:</p><p><a href=\"{confirmUrl}\">{confirmUrl}</a></p>"
-        );
+        var expose = _cfg.GetValue("Auth:ExposeConfirmLinkInResponse", false);
+        var mode = _cfg["Email:Mode"] ?? "Dev";
 
-        var expose = _cfg.GetValue("Auth:ExposeConfirmLinkInResponse", true);
+        try
+        {
+            if (mode.Equals("Prod", StringComparison.OrdinalIgnoreCase))
+            {
+                await _emailSender.SendAsync(
+                    user.Email!,
+                    "Confirm your email",
+                    $@"<p>Hej! Bekräfta din e-post genom att klicka här:</p>
+               <p><a href=""{confirmUrl}"">Bekräfta e-post</a></p>");
+                _logger.LogInformation("Register: email queued to {Email}", user.Email);
+            }
+            else
+            {
+                // Dev → visa alltid direktlänk i svaret
+                expose = true;
+                _logger.LogInformation("Register: dev mode, exposing confirm link");
+            }
+        }
+        catch (Exception ex)
+        {
+            // Kasta inte – exponera länken så vi kan testa ändå
+            _logger.LogError(ex, "Register: email send failed to {Email}", user.Email);
+            expose = true;
+        }
 
         return Ok(new BasicResultDto
         {
             Succeeded = true,
-            Message = expose ? "User created (dev mode)" : "User created. Check your email.",
+            Message = expose ? "User created (dev/test mode)" : "User created. Check your email.",
             ConfirmEmailUrl = expose ? confirmUrl : null
         });
+
     }
 
 
