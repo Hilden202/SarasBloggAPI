@@ -92,11 +92,13 @@ public class AuthController : ControllerBase
         {
             if (mode.Equals("Prod", StringComparison.OrdinalIgnoreCase))
             {
-                await _emailSender.SendAsync(
-                    user.Email!,
-                    "Confirm your email",
-                    $@"<p>Hej! Bekräfta din e-post genom att klicka här:</p>
-               <p><a href=""{confirmUrl}"">Bekräfta e-post</a></p>");
+                var subject = "Bekräfta din e-post till SarasBlogg";
+                var html = $@"<p>Hej!</p>
+                      <p>Bekräfta din e-post genom att klicka på länken nedan:</p>
+                      <p><a href=""{confirmUrl}"">Bekräfta min e-post</a></p>
+                      <p>Hälsningar,<br/>SarasBlogg</p>";
+
+                await _emailSender.SendAsync(user.Email!, subject, html);
                 _logger.LogInformation("Register: email queued to {Email}", user.Email);
             }
             else
@@ -112,6 +114,7 @@ public class AuthController : ControllerBase
             _logger.LogError(ex, "Register: email send failed to {Email}", user.Email);
             expose = true;
         }
+
 
         return Ok(new BasicResultDto
         {
@@ -230,10 +233,10 @@ public class AuthController : ControllerBase
 
         await _emailSender.SendAsync(
             to: user.Email!,
-            subject: "Confirm your email",
+            subject: "Bekräfta din e-post till SarasBlogg",
             htmlBody: $@"<p>Hej {user.UserName},</p>
-                     <p>Bekräfta din e-post genom att klicka här:</p>
-                     <p><a href=""{confirmUrl}"">Bekräfta e-post</a></p>");
+                 <p>Bekräfta din e-post genom att klicka här:</p>
+                 <p><a href=""{confirmUrl}"">Bekräfta e-post</a></p>");
 
         var expose = _cfg.GetValue("Auth:ExposeConfirmLinkInResponse", true);
         return Ok(new BasicResultDto
