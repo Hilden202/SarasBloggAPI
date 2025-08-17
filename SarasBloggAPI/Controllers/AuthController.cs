@@ -254,32 +254,52 @@ public class AuthController : ControllerBase
     [ProducesResponseType(typeof(BasicResultDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<BasicResultDto>> ForgotPassword([FromBody] EmailDto dto)
     {
+        // Samma svar oavsett om e-post finns/är bekräftad (inte läcka info)
+        const string neutralMsg = "If the email exists, a reset link was sent.";
+
         if (dto is null || string.IsNullOrWhiteSpace(dto.Email))
-            return Ok(new BasicResultDto { Succeeded = true, Message = "If the email exists, a reset link was sent." });
+            return Ok(new BasicResultDto { Succeeded = true, Message = neutralMsg });
 
         var user = await _userManager.FindByEmailAsync(dto.Email);
         if (user is null || !await _userManager.IsEmailConfirmedAsync(user))
-            return Ok(new BasicResultDto { Succeeded = true, Message = "If the email exists, a reset link was sent." });
+            return Ok(new BasicResultDto { Succeeded = true, Message = neutralMsg });
 
+        // 1) Token → Base64Url
         var token = await _userManager.GeneratePasswordResetTokenAsync(user);
         var tokenEncoded = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
 
+        // 2) Frontend-bas (ingen trailing slash krävs)
         var frontendBase = _cfg["Frontend:BaseUrl"] ?? "https://sarasblogg.onrender.com";
-        var resetUrl = $"{frontendBase}/Identity/Account/ResetPassword?userId={user.Id}&token={tokenEncoded}";
 
-        await _emailSender.SendAsync(
-            to: user.Email!,
-            subject: "Återställ lösenord",
-            htmlBody: $@"<p>Hej {user.UserName},</p>
-                     <p>Klicka på länken för att återställa ditt lösenord:</p>
-                     <p><a href=""{resetUrl}"">Återställ lösenord</a></p>");
+        // 3) Bygg länk säkert med QueryHelpers
+        var resetPath = "/Identity/Account/ResetPassword";
+        var resetUrl = QueryHelpers.AddQueryString(
+            $"{frontendBase.TrimEnd('/')}{resetPath}",
+            new Dictionary<string, string?>
+            {
+                ["userId"] = user.Id,
+                ["token"] = tokenEncoded
+            });
 
+        // 4) Skicka mejlet
+        var subject = "Återställ lösenord";
+        var html = $@"
+        <p>Hej {System.Net.WebUtility.HtmlEncode(user.UserName)},</p>
+        <p>Klicka på länken nedan för att välja ett nytt lösenord:</p>
+        <p><a href=""{resetUrl}"">Återställ lösenord</a></p>
+        <p>Om du inte begärt detta kan du ignorera mejlet.</p>
+        <p>Hälsningar,<br/>SarasBlogg</p>";
+
+        await _emailSender.SendAsync(user.Email!, subject, html);
+
+        // 5) Dev-läge: exponera länken i svaret (använder befintligt fält)
         var expose = _cfg.GetValue("Auth:ExposeConfirmLinkInResponse", true);
+
         return Ok(new BasicResultDto
         {
             Succeeded = true,
-            Message = expose ? "Reset link generated (dev)." : "If the email exists, a reset link was sent.",
-            ConfirmEmailUrl = expose ? resetUrl : null   // återanvänder fältet för dev-visning
+            Message = expose ? "Reset link generated (dev)." : neutralMsg,
+            ConfirmEmailUrl = expose ? resetUrl : null // återanvänder fältet för dev-visning
         });
     }
 
