@@ -22,18 +22,47 @@ namespace SarasBloggAPI
         {
             var builder = WebApplication.CreateBuilder(args);
 
-            var allowedOrigins = builder.Configuration
+            // ---- CORS origins: stöd både Array-sektion och CSV-sträng ----
+            string[] originsFromArray = builder.Configuration
                 .GetSection("Cors:AllowedOrigins")
                 .Get<string[]>() ?? Array.Empty<string>();
 
+            string? csv = builder.Configuration["Cors:AllowedOrigins"];              // tillåter Cors__AllowedOrigins="a,b,c"
+            csv ??= builder.Configuration["Cors:AllowedOriginsCsv"];                 // alternativ nyckel om du vill
+
+            var originsFromCsv = string.IsNullOrWhiteSpace(csv)
+                ? Array.Empty<string>()
+                : csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            // Slå ihop och deduplicera
+            var allowedOrigins = originsFromArray.Concat(originsFromCsv)
+                .Select(o => o.TrimEnd('/'))
+                .Where(o => !string.IsNullOrWhiteSpace(o))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            // Logga för felsökning
+            Console.WriteLine("CORS origins => " + (allowedOrigins.Length == 0 ? "<EMPTY>" : string.Join(", ", allowedOrigins)));
+
             builder.Services.AddCors(options =>
             {
-                options.AddPolicy("SarasPolicy", p => p
-                    .WithOrigins(allowedOrigins)
-                    .AllowAnyHeader()
-                    .AllowAnyMethod()
-                // .AllowCredentials() // bara om du skickar cookies/cred
-                );
+                options.AddPolicy("SarasPolicy", p =>
+                {
+                    if (allowedOrigins.Length > 0)
+                    {
+                        p.WithOrigins(allowedOrigins)
+                         .AllowAnyHeader()
+                         .AllowAnyMethod();
+                    }
+                    else
+                    {
+                        // Dev-fallback så du inte låser ut dig lokalt
+                        if (builder.Environment.IsDevelopment())
+                            p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+                        else
+                            p.WithOrigins("https://example.com"); // håll hårt i prod
+                    }
+                });
             });
 
             // Render/containers: bind PORT från env
