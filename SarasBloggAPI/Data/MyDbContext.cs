@@ -23,6 +23,17 @@ namespace SarasBloggAPI.Data
         public DbSet<ContactMe> ContactMe { get; set; } = default!;
 
         public DbSet<BloggImage> BloggImages { get; set; } = default!;
+        public DbSet<BloggLike> BloggLikes => Set<BloggLike>();
+
+        protected override void OnModelCreating(ModelBuilder b)
+        {
+            base.OnModelCreating(b);
+
+            b.Entity<BloggLike>()
+             .HasIndex(x => new { x.BloggId, x.UserId })
+             .IsUnique();
+        }
+
 
     }
 }
