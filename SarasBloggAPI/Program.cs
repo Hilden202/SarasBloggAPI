@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.DataProtection;
 using SarasBloggAPI.Data;
 using SarasBloggAPI.Services;
 using SarasBloggAPI.DAL;
@@ -12,6 +13,7 @@ using HealthChecks.NpgSql;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using System.IO;
 
 
 namespace SarasBloggAPI
@@ -117,6 +119,30 @@ namespace SarasBloggAPI
             }
 
             var npgsqlCs = BuildNpgsqlCs(rawConnectionString);
+
+            // ---- DataProtection: smart conn-str val + fallback ----
+            string? dpConnName = builder.Configuration["DataProtection:ConnectionStringName"];
+            string? dpConn =
+                (dpConnName is not null ? builder.Configuration.GetConnectionString(dpConnName) : null)
+                ?? builder.Configuration.GetConnectionString("DefaultConnection")
+                ?? builder.Configuration.GetConnectionString("MyConnection")
+                ?? npgsqlCs; // sista fallback = API:ts egen DB-conn
+
+            if (!string.IsNullOrWhiteSpace(dpConn))
+            {
+                builder.Services.AddDbContext<DataProtectionKeysContext>(opt => opt.UseNpgsql(dpConn));
+                builder.Services.AddDataProtection()
+                    .PersistKeysToDbContext<DataProtectionKeysContext>()
+                    .SetApplicationName("SarasBloggSharedKeys");
+            }
+            else
+            {
+                Directory.CreateDirectory("/app/data-keys");
+                builder.Services.AddDataProtection()
+                    .PersistKeysToFileSystem(new DirectoryInfo("/app/data-keys"))
+                    .SetApplicationName("SarasBloggSharedKeys");
+            }
+            // ---- slut DataProtection ----
 
             // Databas & Identitetetskonfiguration (med EF-retry)
             // (din originalrad behålls nedan, utkommenterad)
