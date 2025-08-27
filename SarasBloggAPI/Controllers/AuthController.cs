@@ -21,7 +21,6 @@ public class AuthController : ControllerBase
     private readonly IEmailSender _emailSender;
     private readonly ILogger<AuthController> _logger;
 
-
     public AuthController(SignInManager<ApplicationUser> signInManager,
                           UserManager<ApplicationUser> userManager,
                           TokenService tokenService,
@@ -36,7 +35,6 @@ public class AuthController : ControllerBase
         _emailSender = emailSender;
         _logger = logger;
     }
-
 
     // ---------- REGISTER ----------
     [AllowAnonymous]
@@ -103,18 +101,15 @@ public class AuthController : ControllerBase
             }
             else
             {
-                // Dev → visa alltid direktlänk i svaret
                 expose = true;
                 _logger.LogInformation("Register: dev mode, exposing confirm link");
             }
         }
         catch (Exception ex)
         {
-            // Kasta inte – exponera länken så vi kan testa ändå
             _logger.LogError(ex, "Register: email send failed to {Email}", user.Email);
             expose = true;
         }
-
 
         return Ok(new BasicResultDto
         {
@@ -122,9 +117,7 @@ public class AuthController : ControllerBase
             Message = expose ? "User created (dev/test mode)" : "User created. Check your email.",
             ConfirmEmailUrl = expose ? confirmUrl : null
         });
-
     }
-
 
     // ---------- LOGIN ----------
     [AllowAnonymous]
@@ -144,14 +137,12 @@ public class AuthController : ControllerBase
         if (!result.Succeeded)
             return Unauthorized("Invalid credentials.");
 
-        // Om du vill kräva email-konfirmation:
-        if (!await _userManager.IsEmailConfirmedAsync(user)) return Unauthorized("Email not confirmed.");
+        if (!await _userManager.IsEmailConfirmedAsync(user))
+            return Unauthorized("Email not confirmed.");
 
         var access = await _tokenService.CreateAccessTokenAsync(user);
         var accessExp = DateTime.UtcNow.AddMinutes(int.Parse(_cfg["Jwt:AccessTokenMinutes"] ?? "60"));
-
         var (refresh, refreshExp) = _tokenService.CreateRefreshToken();
-        // TODO: spara refresh-token i DB för rotation/revokering (senare steg)
 
         return new LoginResponse(access, accessExp, refresh, refreshExp);
     }
@@ -184,6 +175,7 @@ public class AuthController : ControllerBase
         return new MeResponse(user.Id, user.UserName ?? "", user.Email, roles);
     }
 
+    // ---------- CONFIRM EMAIL ----------
     [AllowAnonymous]
     [HttpPost("confirm-email")]
     [Consumes("application/json")]
@@ -198,7 +190,6 @@ public class AuthController : ControllerBase
         if (user is null)
             return BadRequest(new BasicResultDto { Succeeded = false, Message = "Invalid user" });
 
-        // Decode Base64 URL-encoded code
         var decodedBytes = WebEncoders.Base64UrlDecode(dto.Code);
         var decodedCode = Encoding.UTF8.GetString(decodedBytes);
 
@@ -211,6 +202,7 @@ public class AuthController : ControllerBase
 
         return Ok(new BasicResultDto { Succeeded = true, Message = "Email confirmed successfully" });
     }
+
     // ---------- RESEND CONFIRMATION ----------
     [AllowAnonymous]
     [HttpPost("resend-confirmation")]
@@ -254,7 +246,6 @@ public class AuthController : ControllerBase
     [ProducesResponseType(typeof(BasicResultDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<BasicResultDto>> ForgotPassword([FromBody] EmailDto dto)
     {
-        // Samma svar oavsett om e-post finns/är bekräftad (inte läcka info)
         const string neutralMsg = "If the email exists, a reset link was sent.";
 
         if (dto is null || string.IsNullOrWhiteSpace(dto.Email))
@@ -264,14 +255,10 @@ public class AuthController : ControllerBase
         if (user is null || !await _userManager.IsEmailConfirmedAsync(user))
             return Ok(new BasicResultDto { Succeeded = true, Message = neutralMsg });
 
-        // 1) Token → Base64Url
         var token = await _userManager.GeneratePasswordResetTokenAsync(user);
         var tokenEncoded = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
 
-        // 2) Frontend-bas (ingen trailing slash krävs)
         var frontendBase = _cfg["Frontend:BaseUrl"] ?? "https://sarasblogg.onrender.com";
-
-        // 3) Bygg länk säkert med QueryHelpers
         var resetPath = "/Identity/Account/ResetPassword";
         var resetUrl = QueryHelpers.AddQueryString(
             $"{frontendBase.TrimEnd('/')}{resetPath}",
@@ -281,7 +268,6 @@ public class AuthController : ControllerBase
                 ["token"] = tokenEncoded
             });
 
-        // 4) Skicka mejlet
         var subject = "Återställ lösenord";
         var html = $@"
         <p>Hej {System.Net.WebUtility.HtmlEncode(user.UserName)},</p>
@@ -292,14 +278,13 @@ public class AuthController : ControllerBase
 
         await _emailSender.SendAsync(user.Email!, subject, html);
 
-        // 5) Dev-läge: exponera länken i svaret (använder befintligt fält)
         var expose = _cfg.GetValue("Auth:ExposeConfirmLinkInResponse", true);
 
         return Ok(new BasicResultDto
         {
             Succeeded = true,
             Message = expose ? "Reset link generated (dev)." : neutralMsg,
-            ConfirmEmailUrl = expose ? resetUrl : null // återanvänder fältet för dev-visning
+            ConfirmEmailUrl = expose ? resetUrl : null
         });
     }
 
@@ -330,7 +315,10 @@ public class AuthController : ControllerBase
             return BadRequest(new BasicResultDto { Succeeded = false, Message = msg });
         }
 
+        // ✔ Rensa ev. låsning/failed count efter lyckad reset (annars kan inlogg nekas ändå)
+        await _userManager.ResetAccessFailedCountAsync(user);
+        await _userManager.SetLockoutEndDateAsync(user, null);
+
         return Ok(new BasicResultDto { Succeeded = true, Message = "Password reset successfully" });
     }
-
 }
