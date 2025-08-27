@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using System.Collections.Generic;
+using Microsoft.EntityFrameworkCore;
 using SarasBloggAPI.Data;
 
 namespace SarasBloggAPI.DAL
@@ -14,7 +15,33 @@ namespace SarasBloggAPI.DAL
 
         public async Task<List<Models.Comment>> GetCommentsAsync()
         {
-            return await _context.Comments.ToListAsync();
+            var list = await _context.Comments.AsNoTracking().ToListAsync();
+
+            // Hämta aktuella usernames för alla unika e-postadresser i listan
+            var emails = list.Where(c => !string.IsNullOrWhiteSpace(c.Email))
+                                     .Select(c => c.Email!)
+                                     .Distinct(StringComparer.OrdinalIgnoreCase)
+                                     .ToList();
+
+            if (emails.Count > 0)
+            {
+                var map = await _context.Users
+                              .Where(u => u.Email != null && emails.Contains(u.Email))
+                                .Select(u => new { u.Email, u.UserName })
+                                .ToDictionaryAsync(x => x.Email!, x => x.UserName ?? "", StringComparer.OrdinalIgnoreCase);
+
+                foreach (var c in list)
+                {
+                    if (!string.IsNullOrWhiteSpace(c.Email) &&
+                         map.TryGetValue(c.Email!, out var currentName) &&
+                         !string.IsNullOrWhiteSpace(currentName))
+                    {
+                        c.Name = currentName; // alltid aktuellt namn för medlemmar
+                    }
+                }
+            }
+
+            return list;
         }
 
         public async Task<Models.Comment?> GetCommentAsync(int id)

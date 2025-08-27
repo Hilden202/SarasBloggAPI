@@ -2,6 +2,9 @@
 using Microsoft.AspNetCore.Mvc;
 using SarasBloggAPI.DAL;
 using SarasBloggAPI.Services;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Identity;
+using SarasBloggAPI.Data;
 
 namespace SarasBloggAPI.Controllers
 {
@@ -11,11 +14,15 @@ namespace SarasBloggAPI.Controllers
     {
         private readonly DAL.CommentManager _commentManager;
         private readonly ContentSafetyService _contentSafetyService;
+        private readonly UserManager<ApplicationUser> _userManager;
 
-        public CommentController(CommentManager commentManager, ContentSafetyService contentSafetyService)
+        public CommentController(CommentManager commentManager,
+            ContentSafetyService contentSafetyService,
+            UserManager<ApplicationUser> userManager)
         {
             _commentManager = commentManager;
             _contentSafetyService = contentSafetyService;
+            _userManager = userManager;
         }
 
         [HttpGet] // Hämtar alla
@@ -45,6 +52,18 @@ namespace SarasBloggAPI.Controllers
 
                 if (!isContentSafe)
                     return BadRequest("Kommentaren bedömdes som osäker och kan inte publiceras.");
+                
+                // Om inloggad: koppla kommentaren till e-posten (stabil identitet)
+                var myId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (!string.IsNullOrWhiteSpace(myId))
+                {
+                    var me = await _userManager.FindByIdAsync(myId);
+                    if (me != null)
+                    {
+                        comment.Email = me.Email;                   // knutpunkt
+                        comment.Name = me.UserName ?? comment.Name; // säkerställ aktuellt namn direkt
+                    }
+                }
 
                 await _commentManager.CreateCommentAsync(comment);
 
