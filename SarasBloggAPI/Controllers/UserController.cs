@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SarasBloggAPI.DAL;
 using SarasBloggAPI.DTOs;
@@ -17,6 +18,7 @@ namespace SarasBloggAPI.Controllers
             _userManagerService = userManagerService;
         }
 
+        [Authorize(Policy = "AdminOrSuperadmin")]
         [HttpGet("all")]
         [ProducesResponseType(typeof(IEnumerable<UserDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -27,6 +29,7 @@ namespace SarasBloggAPI.Controllers
             return Ok(users);
         }
 
+        [Authorize(Policy = "AdminOrSuperadmin")]
         [HttpGet("{id}")]
         [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -38,6 +41,7 @@ namespace SarasBloggAPI.Controllers
             return user == null ? NotFound() : Ok(user);
         }
 
+        [Authorize(Policy = "AdminOrSuperadmin")]
         [HttpGet("{id}/roles")]
         [ProducesResponseType(typeof(IEnumerable<string>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -48,6 +52,7 @@ namespace SarasBloggAPI.Controllers
             return Ok(roles);
         }
 
+        [Authorize(Policy = "SuperadminOnly")]
         [HttpDelete("delete/{id}")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -67,6 +72,7 @@ namespace SarasBloggAPI.Controllers
             return result ? Ok() : BadRequest("❌ Borttagning misslyckades.");
         }
 
+        [Authorize(Policy = "SuperadminOnly")]
         [HttpPost("{id}/add-role/{roleName}")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -78,6 +84,7 @@ namespace SarasBloggAPI.Controllers
             return success ? Ok() : BadRequest("❌ Kunde inte lägga till rollen.");
         }
 
+        [Authorize(Policy = "SuperadminOnly")]
         [HttpDelete("{id}/remove-role/{roleName}")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -93,6 +100,7 @@ namespace SarasBloggAPI.Controllers
             return success ? Ok() : BadRequest("❌ Kunde inte ta bort rollen.");
         }
 
+        [Authorize(Policy = "SuperadminOnly")]
         [HttpPut("{id}/username")]
         [ProducesResponseType(typeof(BasicResultDto), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(BasicResultDto), StatusCodes.Status400BadRequest)]
@@ -106,5 +114,24 @@ namespace SarasBloggAPI.Controllers
             var result = await _userManagerService.ChangeUserNameAsync(id, dto.NewUserName);
             return result.Succeeded ? Ok(result) : BadRequest(result);
         }
+
+        [Authorize(Policy = "RequireUser")]
+        [HttpPut("me/username")]
+        [ProducesResponseType(typeof(BasicResultDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(BasicResultDto), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        public async Task<IActionResult> ChangeMyUserName([FromBody] ChangeUserNameRequestDto dto)
+        {
+            if (dto is null || string.IsNullOrWhiteSpace(dto.NewUserName))
+                return BadRequest(new BasicResultDto { Succeeded = false, Message = "New username is required." });
+
+            var myId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(myId))
+                return Unauthorized();
+
+            var result = await _userManagerService.ChangeUserNameAsync(myId, dto.NewUserName);
+            return result.Succeeded ? Ok(result) : BadRequest(result);
+        }
+
     }
 }

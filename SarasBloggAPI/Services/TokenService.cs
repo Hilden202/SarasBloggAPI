@@ -4,6 +4,7 @@ using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
 using SarasBloggAPI.Data;
+using System.Globalization;
 
 namespace SarasBloggAPI.Services;
 
@@ -34,7 +35,10 @@ public class TokenService
             new(ClaimTypes.Name, user.UserName ?? string.Empty),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
-        claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
+
+        // skriv roller i lowercase i token
+        claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r.ToLowerInvariant())));
+
 
         var token = new JwtSecurityToken(
             issuer: jwt["Issuer"],

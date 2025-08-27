@@ -14,6 +14,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using System.IO;
+using System.Security.Claims;
 
 
 namespace SarasBloggAPI
@@ -207,23 +208,40 @@ namespace SarasBloggAPI
                     o.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
                     o.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
                 })
-                .AddJwtBearer(o =>
+
+            .AddJwtBearer(o =>
+            {
+                o.TokenValidationParameters = new TokenValidationParameters
                 {
-                    o.TokenValidationParameters = new TokenValidationParameters
-                    {
-                        ValidIssuer = jwt["Issuer"],
-                        ValidAudience = jwt["Audience"],
-                        IssuerSigningKey = key,
-                        ValidateIssuerSigningKey = true,
-                        ValidateIssuer = true,
-                        ValidateAudience = true,
-                        ValidateLifetime = true,
-                        ClockSkew = TimeSpan.FromSeconds(30)
-                    };
-                });
+                    ValidIssuer = jwt["Issuer"],
+                    ValidAudience = jwt["Audience"],
+                    IssuerSigningKey = key,
+                    ValidateIssuerSigningKey = true,
+                    ValidateIssuer = true,
+                    ValidateAudience = true,
+                    ValidateLifetime = true,
+                    ClockSkew = TimeSpan.FromSeconds(30),
+                    RoleClaimType = ClaimTypes.Role   // <-- viktigt
+                };
+            });
 
-            builder.Services.AddAuthorization();
+            builder.Services.AddAuthorization(options =>
+            {
+                options.AddPolicy("RequireUser", p =>
+                    p.RequireRole("user", "superuser", "admin", "superadmin"));
 
+                options.AddPolicy("CanModerateComments", p =>
+                    p.RequireRole("superuser", "admin", "superadmin"));
+
+                options.AddPolicy("CanManageBlogs", p =>
+                    p.RequireRole("admin", "superadmin"));
+
+                options.AddPolicy("SuperadminOnly", p =>
+                    p.RequireRole("superadmin"));
+
+                options.AddPolicy("AdminOrSuperadmin", p =>
+                    p.RequireRole("admin", "superadmin"));
+            });
 
             var app = builder.Build();
 
