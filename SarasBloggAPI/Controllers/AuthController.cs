@@ -159,7 +159,11 @@ public class AuthController : ControllerBase
 
     // ---------- ME ----------
     [Authorize]
+    // gamla route (behåll funktionell, men göm i Swagger)
     [HttpGet("me")]
+    [ApiExplorerSettings(IgnoreApi = true)]
+    // ny “snygg” alias-route som visas i Swagger
+    [HttpGet("~/api/users/me")]
     [ProducesResponseType(typeof(MeResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<MeResponse>> Me()
@@ -321,4 +325,43 @@ public class AuthController : ControllerBase
 
         return Ok(new BasicResultDto { Succeeded = true, Message = "Password reset successfully" });
     }
+
+    // ---------- CHANGE PASSWORD ----------
+    [Authorize]
+    // gamla route (behåll funktionell, men göm i Swagger)
+    [HttpPost("change-password")]
+    [ApiExplorerSettings(IgnoreApi = true)]
+    // ny alias-route som visas i Swagger
+    [HttpPost("~/api/users/me/change-password")]
+    [Consumes("application/json")]
+    [ProducesResponseType(typeof(BasicResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(BasicResultDto), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<BasicResultDto>> ChangePassword([FromBody] ChangePasswordDto dto)
+    {
+        if (dto is null || string.IsNullOrWhiteSpace(dto.CurrentPassword) || string.IsNullOrWhiteSpace(dto.NewPassword))
+            return BadRequest(new BasicResultDto { Succeeded = false, Message = "Current and new password are required." });
+
+        var userName = User?.Identity?.Name;
+        if (string.IsNullOrWhiteSpace(userName))
+            return BadRequest(new BasicResultDto { Succeeded = false, Message = "Not authenticated." });
+
+        var user = await _userManager.FindByNameAsync(userName);
+        if (user is null)
+            return BadRequest(new BasicResultDto { Succeeded = false, Message = "User not found." });
+
+        var result = await _userManager.ChangePasswordAsync(user, dto.CurrentPassword, dto.NewPassword);
+        if (!result.Succeeded)
+        {
+            var msg = string.Join("; ", result.Errors.Select(e => $"{e.Code}: {e.Description}"));
+            return BadRequest(new BasicResultDto { Succeeded = false, Message = msg });
+        }
+
+        // Valfritt men bra: rensa ev. låsning och uppdatera säkerhetsstämplar
+        await _userManager.ResetAccessFailedCountAsync(user);
+        await _userManager.SetLockoutEndDateAsync(user, null);
+        await _signInManager.RefreshSignInAsync(user); // för cookie-scenarier; har ingen nackdel med JWT
+
+        return Ok(new BasicResultDto { Succeeded = true, Message = "Password changed successfully." });
+    }
+
 }

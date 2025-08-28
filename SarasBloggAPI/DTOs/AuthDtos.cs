@@ -40,3 +40,9 @@ public sealed class ConfirmEmailRequestDto
 }
 public record EmailDto(string Email);
 public record ResetPasswordDto(string UserId, string Token, string NewPassword);
+
+public sealed class ChangePasswordDto
+{
+    public string CurrentPassword { get; set; } = "";
+    public string NewPassword { get; set; } = "";
+}
