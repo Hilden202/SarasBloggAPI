@@ -238,7 +238,7 @@ public class AuthController : ControllerBase
         return Ok(new BasicResultDto
         {
             Succeeded = true,
-            Message = expose ? "Confirmation link generated (dev)." : "If the email exists, a confirmation link was sent.",
+            Message = expose ? "Bekräftelselänk skapad (dev)." : "Om adressen finns skickades en bekräftelselänk.",
             ConfirmEmailUrl = expose ? confirmUrl : null
         });
     }
@@ -395,6 +395,72 @@ public class AuthController : ControllerBase
 
         await _signInManager.RefreshSignInAsync(user);
         return Ok(new BasicResultDto { Succeeded = true, Message = "Password set successfully." });
+    }
+
+    // --- CHANGE EMAIL: START ---
+    [Authorize]
+    [HttpPost("change-email/start")]
+    [HttpPost("~/api/users/me/change-email/start")]
+    [ProducesResponseType(typeof(BasicResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(BasicResultDto), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<BasicResultDto>> ChangeEmailStart([FromBody] ChangeEmailStartDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto?.NewEmail))
+            return BadRequest(new BasicResultDto { Succeeded = false, Message = "New email is required." });
+
+        var userName = User?.Identity?.Name;
+        var user = string.IsNullOrEmpty(userName) ? null : await _userManager.FindByNameAsync(userName);
+        if (user is null) return Unauthorized();
+
+        // valfritt: kontrollera om e-posten redan används
+        var exists = await _userManager.FindByEmailAsync(dto.NewEmail);
+        if (exists is not null && exists.Id != user.Id)
+            return BadRequest(new BasicResultDto { Succeeded = false, Message = "Email already in use." });
+
+        var token = await _userManager.GenerateChangeEmailTokenAsync(user, dto.NewEmail);
+        var codeEncoded = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+
+        var frontendBase = _cfg["Frontend:BaseUrl"] ?? "https://sarasblogg.onrender.com";
+        var confirmUrl = $"{frontendBase}/Identity/Account/ConfirmEmailChange?userId={user.Id}&code={codeEncoded}&email={Uri.EscapeDataString(dto.NewEmail)}";
+
+        // Skicka mejl (Prod) eller exponera länk (Dev)
+        var expose = _cfg.GetValue("Auth:ExposeConfirmLinkInResponse", true);
+        try
+        {
+            var subject = "Bekräfta byte av e-post";
+            var html = $@"<p>Hej {System.Net.WebUtility.HtmlEncode(user.UserName)},</p>
+                      <p>Klicka för att bekräfta ny e-post: <a href=""{confirmUrl}"">Bekräfta e-post</a></p>";
+            await _emailSender.SendAsync(dto.NewEmail, subject, html);
+        }
+        catch { /* vid dev kan vi exponera */ }
+
+        return Ok(new BasicResultDto { Succeeded = true, Message = "Confirmation sent.", ConfirmEmailUrl = expose ? confirmUrl : null });
+    }
+
+    // --- CHANGE EMAIL: CONFIRM ---
+    [AllowAnonymous]
+    [HttpPost("change-email/confirm")]
+    [HttpPost("~/api/users/change-email/confirm")]
+    [ProducesResponseType(typeof(BasicResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(BasicResultDto), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<BasicResultDto>> ChangeEmailConfirm([FromBody] ChangeEmailConfirmDto dto, [FromQuery] string? newEmail)
+    {
+        if (string.IsNullOrWhiteSpace(dto?.UserId) || string.IsNullOrWhiteSpace(dto.Code) || string.IsNullOrWhiteSpace(newEmail))
+            return BadRequest(new BasicResultDto { Succeeded = false, Message = "UserId, Code and newEmail are required." });
+
+        var user = await _userManager.FindByIdAsync(dto.UserId);
+        if (user is null) return BadRequest(new BasicResultDto { Succeeded = false, Message = "Invalid user." });
+
+        var code = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(dto.Code));
+        var result = await _userManager.ChangeEmailAsync(user, newEmail, code);
+        if (!result.Succeeded)
+        {
+            var msg = string.Join("; ", result.Errors.Select(e => $"{e.Code}: {e.Description}"));
+            return BadRequest(new BasicResultDto { Succeeded = false, Message = msg });
+        }
+
+        // sätt även UserName om du vill spegla e-posten: await _userManager.SetUserNameAsync(user, newEmail);
+        return Ok(new BasicResultDto { Succeeded = true, Message = "Email changed." });
     }
 
 

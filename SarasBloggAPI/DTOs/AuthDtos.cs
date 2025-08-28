@@ -50,4 +50,6 @@ public sealed class SetPasswordDto
 {
     public string NewPassword { get; set; } = "";
 }
+public sealed class ChangeEmailStartDto { public string NewEmail { get; set; } = ""; }
+public sealed class ChangeEmailConfirmDto { public string UserId { get; set; } = ""; public string Code { get; set; } = ""; }
 
