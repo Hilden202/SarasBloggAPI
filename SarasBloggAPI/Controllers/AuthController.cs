@@ -364,4 +364,38 @@ public class AuthController : ControllerBase
         return Ok(new BasicResultDto { Succeeded = true, Message = "Password changed successfully." });
     }
 
+    [Authorize]
+    [HttpPost("set-password")]
+    [HttpPost("~/api/users/me/set-password")] // alias
+    [Consumes("application/json")]
+    [ProducesResponseType(typeof(BasicResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(BasicResultDto), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<BasicResultDto>> SetPassword([FromBody] SetPasswordDto dto)
+    {
+        if (dto is null || string.IsNullOrWhiteSpace(dto.NewPassword))
+            return BadRequest(new BasicResultDto { Succeeded = false, Message = "New password is required." });
+
+        var userName = User?.Identity?.Name;
+        if (string.IsNullOrWhiteSpace(userName))
+            return Unauthorized();
+
+        var user = await _userManager.FindByNameAsync(userName);
+        if (user is null) return BadRequest(new BasicResultDto { Succeeded = false, Message = "User not found." });
+
+        var hasPassword = await _userManager.HasPasswordAsync(user);
+        if (hasPassword)
+            return BadRequest(new BasicResultDto { Succeeded = false, Message = "User already has a password." });
+
+        var result = await _userManager.AddPasswordAsync(user, dto.NewPassword);
+        if (!result.Succeeded)
+        {
+            var msg = string.Join("; ", result.Errors.Select(e => $"{e.Code}: {e.Description}"));
+            return BadRequest(new BasicResultDto { Succeeded = false, Message = msg });
+        }
+
+        await _signInManager.RefreshSignInAsync(user);
+        return Ok(new BasicResultDto { Succeeded = true, Message = "Password set successfully." });
+    }
+
+
 }
