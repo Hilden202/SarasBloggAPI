@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Mvc;
 using SarasBloggAPI.DAL;
 using SarasBloggAPI.DTOs;
 using SarasBloggAPI.Services;
+using Microsoft.AspNetCore.Identity;
+using SarasBloggAPI.Data;
 
 namespace SarasBloggAPI.Controllers
 {
@@ -12,10 +14,16 @@ namespace SarasBloggAPI.Controllers
     public class UserController : ControllerBase
     {
         private readonly UserManagerService _userManagerService;
+        private readonly UserManager<ApplicationUser> _userManager;
+        private readonly SignInManager<ApplicationUser> _signInManager;
 
-        public UserController(UserManagerService userManagerService)
+        public UserController(UserManagerService userManagerService,
+                              UserManager<ApplicationUser> userManager,
+                              SignInManager<ApplicationUser> signInManager)
         {
             _userManagerService = userManagerService;
+            _userManager = userManager;
+            _signInManager = signInManager;
         }
 
         [Authorize(Policy = "AdminOrSuperadmin")]
@@ -131,6 +139,74 @@ namespace SarasBloggAPI.Controllers
 
             var result = await _userManagerService.ChangeUserNameAsync(myId, dto.NewUserName);
             return result.Succeeded ? Ok(result) : BadRequest(result);
+        }
+        // ---------- UPDATE MY PROFILE ----------
+        [Authorize]
+        [HttpPut("me/profile")]
+        // Alias under /api/users för konsekvent prefix
+        [HttpPut("~/api/users/me/profile")]
+        [Consumes("application/json")]
+        [ProducesResponseType(typeof(BasicResultDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(BasicResultDto), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        public async Task<ActionResult<BasicResultDto>> UpdateMyProfile([FromBody] UpdateProfileDto dto)
+        {
+            var myId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(myId))
+                return Unauthorized();
+
+            var user = await _userManager.FindByIdAsync(myId);
+            if (user is null)
+                return BadRequest(new BasicResultDto { Succeeded = false, Message = "User not found." });
+
+            var changed = false;
+
+            // Telefon via Identity-API (validering/normalisering)
+            if (dto.PhoneNumber != null)
+            {
+                var currentPhone = await _userManager.GetPhoneNumberAsync(user);
+                if (!string.Equals(dto.PhoneNumber, currentPhone, StringComparison.Ordinal))
+                {
+                    var setPhone = await _userManager.SetPhoneNumberAsync(user, dto.PhoneNumber);
+                    if (!setPhone.Succeeded)
+                    {
+                        var err = string.Join("; ", setPhone.Errors.Select(e => e.Description));
+                        return BadRequest(new BasicResultDto { Succeeded = false, Message = err });
+                    }
+                    changed = true;
+                }
+            }
+
+            // Custom-fält på ApplicationUser
+            if (dto.Name != null && !string.Equals(dto.Name, user.Name, StringComparison.Ordinal))
+            {
+                user.Name = dto.Name;
+                changed = true;
+            }
+
+            if (dto.BirthYear.HasValue && dto.BirthYear != user.BirthYear)
+            {
+                user.BirthYear = dto.BirthYear;
+                changed = true;
+            }
+
+            if (changed)
+            {
+                var upd = await _userManager.UpdateAsync(user);
+                if (!upd.Succeeded)
+                {
+                    var err = string.Join("; ", upd.Errors.Select(e => e.Description));
+                    return BadRequest(new BasicResultDto { Succeeded = false, Message = err });
+                }
+
+                await _signInManager.RefreshSignInAsync(user); // ofarligt även med JWT
+            }
+
+            return Ok(new BasicResultDto
+            {
+                Succeeded = true,
+                Message = changed ? "Din profil har uppdaterats." : "Inga ändringar att spara."
+            });
         }
 
     }
