@@ -160,6 +160,36 @@ namespace SarasBloggAPI.DAL
             return result.Succeeded;
         }
 
+        public async Task<ApplicationUser?> FindUserEntityAsync(string id)
+    => await _userManager.FindByIdAsync(id);
+
+        public async Task<BasicResultDto> DeleteMyAccountAsync(string userId, string? password)
+        {
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user is null) return new BasicResultDto { Succeeded = false, Message = "User not found." };
+
+            // Har användaren lokalt lösen? då kräver vi korrekt lösen
+            var hasPw = await _userManager.HasPasswordAsync(user);
+            if (hasPw)
+            {
+                if (string.IsNullOrWhiteSpace(password))
+                    return new BasicResultDto { Succeeded = false, Message = "Password is required." };
+
+                var ok = await _userManager.CheckPasswordAsync(user, password);
+                if (!ok) return new BasicResultDto { Succeeded = false, Message = "Invalid password." };
+            }
+
+            var del = await _userManager.DeleteAsync(user);
+            if (!del.Succeeded)
+                return new BasicResultDto
+                {
+                    Succeeded = false,
+                    Message = string.Join("; ", del.Errors.Select(e => e.Description))
+                };
+
+            return new BasicResultDto { Succeeded = true, Message = "Account deleted." };
+        }
+
 
     }
 }

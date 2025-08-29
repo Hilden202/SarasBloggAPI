@@ -56,12 +56,17 @@ public class AuthController : ControllerBase
 
         if (string.IsNullOrWhiteSpace(dto.Password))
             return BadRequest(new BasicResultDto { Succeeded = false, Message = "Password is required" });
+        
+        if (dto.BirthYear is < 1900 or > 2100)
+            dto.BirthYear = null;
 
         var user = new ApplicationUser
         {
             UserName = dto.UserName,
             Email = dto.Email,
-            EmailConfirmed = false
+            EmailConfirmed = false,
+            Name = dto.Name,
+            BirthYear = dto.BirthYear
         };
 
         var create = await _userManager.CreateAsync(user, dto.Password);

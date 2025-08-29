@@ -6,6 +6,8 @@ using SarasBloggAPI.DTOs;
 using SarasBloggAPI.Services;
 using Microsoft.AspNetCore.Identity;
 using SarasBloggAPI.Data;
+using System.Text;
+using System.Text.Json;
 
 namespace SarasBloggAPI.Controllers
 {
@@ -159,6 +161,12 @@ namespace SarasBloggAPI.Controllers
             if (user is null)
                 return BadRequest(new BasicResultDto { Succeeded = false, Message = "User not found." });
 
+            // --- Sanity/normalisering ---
+            if (dto.BirthYear is < 1900 or > 2100)
+                dto.BirthYear = null;
+            if (dto.Name != null)
+                dto.Name = dto.Name.Trim();
+
             var changed = false;
 
             // Telefon via Identity-API (validering/normalisering)
@@ -207,6 +215,93 @@ namespace SarasBloggAPI.Controllers
                 Succeeded = true,
                 Message = changed ? "Din profil har uppdaterats." : "Inga ändringar att spara."
             });
+        }
+
+        [Authorize]
+        [HttpGet("me/personal-data")]
+        [HttpGet("~/api/users/me/personal-data")]
+        [ProducesResponseType(typeof(PersonalDataDto), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetMyPersonalData()
+        {
+            var myId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(myId)) return Unauthorized();
+
+            var user = await _userManager.FindByIdAsync(myId);
+            if (user is null) return Unauthorized();
+
+            var roles = await _userManager.GetRolesAsync(user);
+
+            var data = new Dictionary<string, string?>
+            {
+                ["Id"] = user.Id,
+                ["UserName"] = user.UserName,
+                ["Email"] = user.Email,
+                ["PhoneNumber"] = await _userManager.GetPhoneNumberAsync(user),
+                ["Name"] = user.Name,
+                ["BirthYear"] = user.BirthYear?.ToString(),
+                ["TwoFactorEnabled"] = user.TwoFactorEnabled.ToString(),
+                ["LockoutEnd"] = user.LockoutEnd?.UtcDateTime.ToString("O"),
+                ["AccessFailedCount"] = user.AccessFailedCount.ToString()
+            };
+
+            var claims = User.Claims
+                .Select(c => new KeyValuePair<string, string>(c.Type, c.Value))
+                .ToList();
+
+            return Ok(new PersonalDataDto { Data = data, Roles = roles.ToList(), Claims = claims });
+        }
+
+        [Authorize]
+        [HttpGet("me/personal-data/download")]
+        [HttpGet("~/api/users/me/personal-data/download")]
+        public async Task<IActionResult> DownloadMyPersonalData()
+        {
+            var result = await GetMyPersonalData() as OkObjectResult;
+            if (result?.Value is null) return Unauthorized();
+
+            var json = JsonSerializer.Serialize(result.Value, new JsonSerializerOptions { WriteIndented = true });
+            var bytes = Encoding.UTF8.GetBytes(json);
+            return File(bytes, "application/json", "PersonalData.json");
+        }
+
+        [Authorize]
+        [HttpDelete("me")]
+        [HttpDelete("~/api/users/me")]
+        [Consumes("application/json")]
+        [ProducesResponseType(typeof(BasicResultDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(BasicResultDto), StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> DeleteMe([FromBody] DeleteMeRequestDto dto)
+        {
+            var myId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(myId)) return Unauthorized();
+
+            var user = await _userManager.FindByIdAsync(myId);
+            if (user is null) return BadRequest(new BasicResultDto { Succeeded = false, Message = "User not found." });
+
+            if ((user.Email ?? "").Equals("admin@sarasblogg.se", StringComparison.OrdinalIgnoreCase))
+                return BadRequest(new BasicResultDto { Succeeded = false, Message = "System user cannot be deleted." });
+
+            // Kräv lösenord om användaren har ett
+            var hasPassword = await _userManager.HasPasswordAsync(user);
+            if (hasPassword)
+            {
+                if (string.IsNullOrWhiteSpace(dto?.Password))
+                    return BadRequest(new BasicResultDto { Succeeded = false, Message = "Password required." });
+
+                var ok = await _userManager.CheckPasswordAsync(user, dto.Password);
+                if (!ok)
+                    return BadRequest(new BasicResultDto { Succeeded = false, Message = "Invalid password." });
+            }
+
+            var res = await _userManager.DeleteAsync(user);
+            if (!res.Succeeded)
+            {
+                var err = string.Join("; ", res.Errors.Select(e => e.Description));
+                return BadRequest(new BasicResultDto { Succeeded = false, Message = err });
+            }
+
+            await _signInManager.SignOutAsync();
+            return Ok(new BasicResultDto { Succeeded = true, Message = "Account deleted." });
         }
 
     }

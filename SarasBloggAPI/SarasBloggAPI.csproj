@@ -34,10 +34,4 @@
   <ItemGroup>
     <Folder Include="Migrations\" />
   </ItemGroup>
-	<ItemGroup>
-		<!-- Bygg INTE C#-filer i _archive -->
-		<Compile Remove="Areas\Identity\_archive\**\*.cs" />
-		<!-- Visa dem ändå i projektet (och i Git) -->
-		<None Include="Areas\Identity\_archive\**\*.*" />
-	</ItemGroup>
 </Project>
