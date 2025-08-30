@@ -47,7 +47,7 @@ namespace SarasBloggAPI.Controllers
                 return BadRequest("Ingen bild bifogad.");
 
             // ✅ Enkel validering: filtyp + MIME + storlek
-            const long MaxBytes = 12 * 1024 * 1024; // 12 MB (håll text i sync!)
+            const long MaxBytes = 20 * 1024 * 1024; // 20 MB (håll text i sync!)
             var allowedExt = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
 
@@ -70,7 +70,7 @@ namespace SarasBloggAPI.Controllers
             }
 
             if (dto.File.Length > MaxBytes)
-                return BadRequest("Filen är för stor. Max 12 MB.");
+                return BadRequest($"Filen är för stor ({dto.File.Length / (1024 * 1024)} MB). Max 20 MB. Fil: {dto.File.FileName}");
 
 
             var bloggExists = await _context.Bloggs.AnyAsync(b => b.Id == dto.BloggId);
