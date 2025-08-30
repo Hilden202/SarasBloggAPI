@@ -201,11 +201,10 @@ namespace SarasBloggAPI.Services
         private static string GenerateFileName(IFormFile file)
         {
             var original = Path.GetFileName(file.FileName);
-            // millisekunder ger unik tidsstämpel även vid 4 snabba uploads
             var timestamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd_HHmmssfff");
-            // kryptorand eliminerar seed-krockar (ingen new Random())
             var random4 = RandomNumberGenerator.GetInt32(0, 10_000).ToString("D4");
             return $"{random4}-{timestamp}_{original}";
+
         }
 
         // robust mot "uploads/uploads"
@@ -292,23 +291,20 @@ namespace SarasBloggAPI.Services
         {
             for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                // Skapa NY StringContent varje försök (HttpContent kan inte återanvändas)
                 using var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
-
                 var resp = await _httpClient.PutAsync(url, content);
                 if (resp.IsSuccessStatusCode) return resp;
 
-                var retryable = Array.IndexOf(Retryable, resp.StatusCode) >= 0;
-                if (!retryable || attempt == maxAttempts) return resp;
-
-                // 0.4s, 1.6s, 3.6s (kvadratisk backoff) + lite jitter
-                var delayMs = 400 * attempt * attempt + Random.Shared.Next(0, 200);
-                await Task.Delay(delayMs);
+                // Liten, säker retry på GitHub-content edge-caser
+                if (Array.IndexOf(Retryable, resp.StatusCode) >= 0 && attempt < maxAttempts)
+                {
+                    var delayMs = 400 * attempt * attempt + Random.Shared.Next(0, 200);
+                    await Task.Delay(delayMs);
+                    continue;
+                }
+                return resp;
             }
-
-            // Defensive fallback
             return new HttpResponseMessage(HttpStatusCode.InternalServerError);
         }
-
     }
 }

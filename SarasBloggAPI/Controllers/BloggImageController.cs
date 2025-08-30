@@ -41,6 +41,7 @@ namespace SarasBloggAPI.Controllers
 
         [HttpPost("upload")]
         [Consumes("multipart/form-data")]
+        [RequestFormLimits(MultipartBodyLengthLimit = 25 * 1024 * 1024)] // 25 MB
         public async Task<IActionResult> UploadImage([FromForm] BloggImageUploadDto dto)
         {
             if (dto.File == null || dto.File.Length == 0)
@@ -80,6 +81,8 @@ namespace SarasBloggAPI.Controllers
             try
             {
                 var imageUrl = await _fileHelper.SaveImageAsync(dto.File, dto.BloggId, "blogg");
+                if (string.IsNullOrWhiteSpace(imageUrl))
+                    return StatusCode(500, "Fel vid uppladdning: tom URL från filhjälparen.");
 
                 var image = new BloggImage
                 {
@@ -116,15 +119,18 @@ namespace SarasBloggAPI.Controllers
                 .Where(i => i.BloggId == bloggId)
                 .ToListAsync();
 
+            var dirty = false;
             for (int i = 0; i < images.Count; i++)
             {
                 var dto = images[i];
                 var dbImage = existingImages.FirstOrDefault(img => img.Id == dto.Id);
-                if (dbImage != null)
+                if (dbImage != null && dbImage.Order != i)
+                {
                     dbImage.Order = i;
+                    dirty = true;
+                }
             }
-
-            await _context.SaveChangesAsync();
+            if (dirty) await _context.SaveChangesAsync();
             return NoContent();
         }
 
@@ -135,7 +141,7 @@ namespace SarasBloggAPI.Controllers
             if (image == null)
                 return NotFound("Bild hittades inte.");
 
-            await _fileHelper.DeleteImageAsync(image.FilePath, "uploads");
+            await _fileHelper.DeleteImageAsync(image.FilePath, "blogg");
             await _imageManager.DeleteImageAsync(id);
 
             return NoContent();
