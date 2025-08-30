@@ -47,7 +47,7 @@ namespace SarasBloggAPI.Controllers
                 return BadRequest("Ingen bild bifogad.");
 
             // ✅ Enkel validering: filtyp + MIME + storlek
-            const long MaxBytes = 12 * 1024 * 1024; // 12 MB
+            const long MaxBytes = 12 * 1024 * 1024; // 12 MB (håll text i sync!)
             var allowedExt = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
 
@@ -56,13 +56,21 @@ namespace SarasBloggAPI.Controllers
 
             var ext = Path.GetExtension(dto.File.FileName);
             if (string.IsNullOrWhiteSpace(ext) || !allowedExt.Contains(ext))
-                return BadRequest("Endast bildfiler (.jpg, .jpeg, .png, .webp, .gif) tillåts.");
+                return BadRequest($"Endast bildfiler (.jpg, .jpeg, .png, .webp, .gif) tillåts. Fil: {dto.File.FileName}");
 
             if (!allowedMime.Contains(dto.File.ContentType))
-                return BadRequest("Ogiltig MIME-typ för bild.");
+            {
+                // Vanlig iPhone: image/heic eller image/heif
+                if (string.Equals(dto.File.ContentType, "image/heic", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(dto.File.ContentType, "image/heif", StringComparison.OrdinalIgnoreCase))
+                {
+                    return BadRequest("HEIC/HEIF stöds inte. Välj JPEG/PNG/WebP (i iPhone: Kamera > Format > 'Mest kompatibel').");
+                }
+                return BadRequest($"Ogiltig MIME-typ för bild: {dto.File.ContentType}. Fil: {dto.File.FileName}");
+            }
 
             if (dto.File.Length > MaxBytes)
-                return BadRequest("Filen är för stor. Max 5 MB.");
+                return BadRequest("Filen är för stor. Max 12 MB.");
 
 
             var bloggExists = await _context.Bloggs.AnyAsync(b => b.Id == dto.BloggId);
