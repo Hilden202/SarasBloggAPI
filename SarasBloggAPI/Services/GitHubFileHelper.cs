@@ -2,6 +2,7 @@
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using System.Security.Cryptography;
 
 namespace SarasBloggAPI.Services
 {
@@ -190,9 +191,11 @@ namespace SarasBloggAPI.Services
         private static string GenerateFileName(IFormFile file)
         {
             var original = Path.GetFileName(file.FileName);
-            var timestamp = DateTime.UtcNow.ToString("yyyyMMdd");
-            var random = Random.Shared.Next(0, 10000).ToString("D4");
-            return $"{random}-{timestamp}_{original}";
+            // millisekunder ger unik tidsstämpel även vid 4 snabba uploads
+            var timestamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd_HHmmssfff");
+            // kryptorand eliminerar seed-krockar (ingen new Random())
+            var random4 = RandomNumberGenerator.GetInt32(0, 10_000).ToString("D4");
+            return $"{random4}-{timestamp}_{original}";
         }
 
         // robust mot "uploads/uploads"
