@@ -14,6 +14,10 @@
         string Id,
         string UserName,
         string? Email,
+        string? Name,
+        int? BirthYear,
+        bool EmailConfirmed,
+        string? PhoneNumber,
         IEnumerable<string> Roles
     );
 

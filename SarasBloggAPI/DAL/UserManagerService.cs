@@ -17,46 +17,44 @@ namespace SarasBloggAPI.DAL
             _roleManager = roleManager;
         }
 
+        // SarasBloggAPI/DAL/UserManagerService.cs
         public async Task<List<UserDto>> GetAllUsersAsync()
         {
             var users = await _userManager.Users.ToListAsync();
-
-            var userDtos = new List<UserDto>();
-
-            foreach (var user in users)
+            var list = new List<UserDto>();
+            foreach (var u in users)
             {
-                var dto = new UserDto
+                list.Add(new UserDto
                 {
-                    Id = user.Id,
-                    Name = user.Name,
-                    Email = user.Email,
-                    UserName = user.UserName ?? "",
-                    Roles = (await _userManager.GetRolesAsync(user)).ToList()
-                };
-
-                userDtos.Add(dto);
+                    Id = u.Id,
+                    UserName = u.UserName ?? "",
+                    Email = u.Email,
+                    Name = u.Name,
+                    BirthYear = u.BirthYear,
+                    EmailConfirmed = u.EmailConfirmed,
+                    Roles = (await _userManager.GetRolesAsync(u)).ToList()
+                });
             }
-
-            return userDtos;
+            return list;
         }
-
 
         public async Task<UserDto?> GetUserByIdAsync(string id)
         {
-            var user = await _userManager.FindByIdAsync(id);
-            if (user == null) return null;
-
-            var roles = await _userManager.GetRolesAsync(user);
-
+            var u = await _userManager.FindByIdAsync(id);
+            if (u is null) return null;
+            var roles = await _userManager.GetRolesAsync(u);
             return new UserDto
             {
-                Id = user.Id,
-                Name = user.Name,
-                Email = user.Email,
-                UserName = user.UserName ?? "",
+                Id = u.Id,
+                UserName = u.UserName ?? "",
+                Email = u.Email,
+                Name = u.Name,
+                BirthYear = u.BirthYear,
+                EmailConfirmed = u.EmailConfirmed,
                 Roles = roles.ToList()
             };
         }
+
 
         public async Task<BasicResultDto> ChangeUserNameAsync(string userId, string newUserName)
         {

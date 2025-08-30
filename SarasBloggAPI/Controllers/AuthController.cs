@@ -173,16 +173,29 @@ public class AuthController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<MeResponse>> Me()
     {
-        var name = User?.Identity?.Name;
-        if (string.IsNullOrEmpty(name))
+        var userName = User?.Identity?.Name;
+        if (string.IsNullOrWhiteSpace(userName))
             return Unauthorized();
 
-        var user = await _userManager.FindByNameAsync(name);
-        if (user is null) return Unauthorized();
+        var user = await _userManager.FindByNameAsync(userName);
+        if (user is null)
+            return Unauthorized();
 
         var roles = await _userManager.GetRolesAsync(user);
-        return new MeResponse(user.Id, user.UserName ?? "", user.Email, roles);
+        var phone = await _userManager.GetPhoneNumberAsync(user);
+
+        return new MeResponse(
+            Id: user.Id,
+            UserName: user.UserName ?? "",
+            Email: user.Email,
+            Name: user.Name,
+            BirthYear: user.BirthYear,
+            EmailConfirmed: user.EmailConfirmed,
+            PhoneNumber: phone,
+            Roles: roles
+        );
     }
+
 
     // ---------- CONFIRM EMAIL ----------
     [AllowAnonymous]
@@ -467,6 +480,7 @@ public class AuthController : ControllerBase
         // sätt även UserName om du vill spegla e-posten: await _userManager.SetUserNameAsync(user, newEmail);
         return Ok(new BasicResultDto { Succeeded = true, Message = "Email changed." });
     }
+
 
 
 }
