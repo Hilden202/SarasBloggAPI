@@ -12,15 +12,23 @@ namespace SarasBloggAPI.Controllers
     [Route("api/[controller]")]
     public class BloggImageController : ControllerBase
     {
+        private static readonly SemaphoreSlim _gitHubGate = new(1, 1); // serialisera writes lite försiktigt
+
         private readonly BloggImageManager _imageManager;
         private readonly IFileHelper _fileHelper;
         private readonly MyDbContext _context;
+        private readonly ILogger<BloggImageController> _logger;
 
-        public BloggImageController(BloggImageManager imageManager, IFileHelper fileHelper, MyDbContext context)
+        public BloggImageController(
+            BloggImageManager imageManager,
+            IFileHelper fileHelper,
+            MyDbContext context,
+            ILogger<BloggImageController> logger)
         {
             _imageManager = imageManager;
             _fileHelper = fileHelper;
             _context = context;
+            _logger = logger;
         }
 
         [HttpGet("blogg/{bloggId}")]
@@ -41,38 +49,36 @@ namespace SarasBloggAPI.Controllers
 
         [HttpPost("upload")]
         [Consumes("multipart/form-data")]
-        [RequestFormLimits(MultipartBodyLengthLimit = 25 * 1024 * 1024)] // 25 MB
+        [RequestSizeLimit(25 * 1024 * 1024)]                         // 25 MB övergräns
+        [RequestFormLimits(MultipartBodyLengthLimit = 25 * 1024 * 1024)]
         public async Task<IActionResult> UploadImage([FromForm] BloggImageUploadDto dto)
         {
             if (dto.File == null || dto.File.Length == 0)
                 return BadRequest("Ingen bild bifogad.");
 
-            // ✅ Enkel validering: filtyp + MIME + storlek
-            const long MaxBytes = 20 * 1024 * 1024; // 20 MB (håll text i sync!)
+            // Enkel validering
+            const long MaxBytes = 20 * 1024 * 1024; // 20 MB (håll i sync med klienttext)
             var allowedExt = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
-
+                              { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
             var allowedMime = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            { "image/jpeg", "image/png", "image/webp", "image/gif" };
+                              { "image/jpeg", "image/png", "image/webp", "image/gif" };
 
             var ext = Path.GetExtension(dto.File.FileName);
             if (string.IsNullOrWhiteSpace(ext) || !allowedExt.Contains(ext))
-                return BadRequest($"Endast bildfiler (.jpg, .jpeg, .png, .webp, .gif) tillåts. Fil: {dto.File.FileName}");
+                return BadRequest($"Endast .jpg, .jpeg, .png, .webp, .gif tillåts. Fil: {dto.File.FileName}");
 
             if (!allowedMime.Contains(dto.File.ContentType))
             {
-                // Vanlig iPhone: image/heic eller image/heif
                 if (string.Equals(dto.File.ContentType, "image/heic", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(dto.File.ContentType, "image/heif", StringComparison.OrdinalIgnoreCase))
+                    string.Equals(dto.File.ContentType, "image/heif", StringComparison.OrdinalIgnoreCase))
                 {
                     return BadRequest("HEIC/HEIF stöds inte. Välj JPEG/PNG/WebP (i iPhone: Kamera > Format > 'Mest kompatibel').");
                 }
-                return BadRequest($"Ogiltig MIME-typ för bild: {dto.File.ContentType}. Fil: {dto.File.FileName}");
+                return BadRequest($"Ogiltig MIME-typ: {dto.File.ContentType}. Fil: {dto.File.FileName}");
             }
 
             if (dto.File.Length > MaxBytes)
                 return BadRequest($"Filen är för stor ({dto.File.Length / (1024 * 1024)} MB). Max 20 MB. Fil: {dto.File.FileName}");
-
 
             var bloggExists = await _context.Bloggs.AnyAsync(b => b.Id == dto.BloggId);
             if (!bloggExists)
@@ -80,7 +86,18 @@ namespace SarasBloggAPI.Controllers
 
             try
             {
-                var imageUrl = await _fileHelper.SaveImageAsync(dto.File, dto.BloggId, "blogg");
+                // Serialisera GitHub-writes: minskar 403/422/409 p.g.a. sekundär rate-limit/edge-cases
+                await _gitHubGate.WaitAsync();
+                string? imageUrl = null;
+                try
+                {
+                    imageUrl = await _fileHelper.SaveImageAsync(dto.File, dto.BloggId, "blogg");
+                }
+                finally
+                {
+                    _gitHubGate.Release();
+                }
+
                 if (string.IsNullOrWhiteSpace(imageUrl))
                     return StatusCode(500, "Fel vid uppladdning: tom URL från filhjälparen.");
 
@@ -105,6 +122,7 @@ namespace SarasBloggAPI.Controllers
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Fel vid uppladdning av bild för blogg {BloggId}", dto.BloggId);
                 return StatusCode(500, $"Fel vid uppladdning: {ex.Message}");
             }
         }
@@ -112,7 +130,7 @@ namespace SarasBloggAPI.Controllers
         [HttpPut("blogg/{bloggId}/order")]
         public async Task<IActionResult> UpdateImageOrder(int bloggId, [FromBody] List<BloggImageDto> images)
         {
-            if (images == null || !images.Any())
+            if (images == null || images.Count == 0)
                 return BadRequest("Ingen bildlista mottogs.");
 
             var existingImages = await _context.BloggImages
@@ -130,7 +148,10 @@ namespace SarasBloggAPI.Controllers
                     dirty = true;
                 }
             }
-            if (dirty) await _context.SaveChangesAsync();
+
+            if (dirty)
+                await _context.SaveChangesAsync();
+
             return NoContent();
         }
 
@@ -141,16 +162,33 @@ namespace SarasBloggAPI.Controllers
             if (image == null)
                 return NotFound("Bild hittades inte.");
 
-            await _fileHelper.DeleteImageAsync(image.FilePath, "blogg");
-            await _imageManager.DeleteImageAsync(id);
+            try
+            {
+                await _fileHelper.DeleteImageAsync(image.FilePath, "blogg"); // mappen är "blogg" under uploads/
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Kunde inte radera fil på GitHub för imageId {Id}", id);
+                // Vi fortsätter ändå och tar bort DB-raden nedan
+            }
 
+            await _imageManager.DeleteImageAsync(id);
             return NoContent();
         }
 
         [HttpDelete("blogg/{bloggId}")]
         public async Task<IActionResult> DeleteImagesByBloggId(int bloggId)
         {
-            await _fileHelper.DeleteBlogFolderAsync(bloggId, "blogg");
+            try
+            {
+                await _fileHelper.DeleteBlogFolderAsync(bloggId, "blogg");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Kunde inte radera GitHub-mapp för blogg {BloggId}", bloggId);
+                // Fortsätt ändå med DB-rensning
+            }
+
             await _imageManager.DeleteImagesByBloggIdAsync(bloggId);
             return NoContent();
         }

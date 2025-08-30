@@ -1,10 +1,15 @@
-﻿using System.Net.Http.Headers;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
-using System.Security.Cryptography;
-using System.Net;
-using System;
 
 namespace SarasBloggAPI.Services
 {
@@ -65,9 +70,10 @@ namespace SarasBloggAPI.Services
                 if (!resp.IsSuccessStatusCode)
                 {
                     var ghBody = await resp.Content.ReadAsStringAsync();
-                    throw new HttpRequestException($"GitHub PUT failed {(int)resp.StatusCode}: {ghBody}");
+                    throw new HttpRequestException($"GitHub PUT failed {(int)resp.StatusCode} {resp.ReasonPhrase}: {ghBody}");
                 }
 
+                // Returnera RAW-URL som kan användas direkt i <img>
                 return $"https://raw.githubusercontent.com/{_userName}/{_repository}/{_branch}/{uploadPath}";
             }
             finally
@@ -104,7 +110,7 @@ namespace SarasBloggAPI.Services
                 if (!resp.IsSuccessStatusCode)
                 {
                     var ghBody = await resp.Content.ReadAsStringAsync();
-                    throw new HttpRequestException($"GitHub PUT failed {(int)resp.StatusCode}: {ghBody}");
+                    throw new HttpRequestException($"GitHub PUT failed {(int)resp.StatusCode} {resp.ReasonPhrase}: {ghBody}");
                 }
 
                 return $"https://raw.githubusercontent.com/{_userName}/{_repository}/{_branch}/{uploadPath}";
@@ -116,23 +122,23 @@ namespace SarasBloggAPI.Services
         }
 
         // ---------- DELETE (singel-fil) ----------
-        public async Task DeleteImageAsync(string imageUrl, string folder)
+        public async Task DeleteImageAsync(string imageUrl, string folder /* ignoreras numer; vi härleder från URL */)
         {
             if (string.IsNullOrWhiteSpace(imageUrl))
                 return;
 
-            string relativePath = null;
+            string? relativePath = null;
 
-            // Försök hitta path via _uploadFolder som innan
+            // Försök hitta path via _uploadFolder (t.ex. "uploads/")
             var marker = $"{_uploadFolder}/";
             var start = imageUrl.IndexOf(marker, StringComparison.Ordinal);
             if (start != -1)
             {
-                relativePath = imageUrl.Substring(start);
+                relativePath = imageUrl.Substring(start); // ex: uploads/blogg/123/fil.png
             }
             else
             {
-                // Fallback: Hantera gamla "raw.githubusercontent.com"-URL:er
+                // Fallback: hantera raw.githubusercontent.com-URL:er
                 try
                 {
                     var uri = new Uri(imageUrl);
@@ -141,23 +147,21 @@ namespace SarasBloggAPI.Services
                         .Where(s => !string.IsNullOrEmpty(s))
                         .ToArray();
 
-                    // Format: user / repo / branch / uploads / about / filename
+                    // Format: user / repo / branch / uploads / blogg / 123 / filename
                     var branchIndex = Array.IndexOf(segments, _branch);
                     if (branchIndex != -1 && branchIndex + 1 < segments.Length)
-                    {
                         relativePath = string.Join('/', segments.Skip(branchIndex + 1));
-                    }
                 }
                 catch
                 {
-                    return; // Ogiltig URL → gör inget
+                    return; // Ogiltig URL → ge upp tyst
                 }
             }
 
             if (string.IsNullOrEmpty(relativePath))
                 return;
 
-            // 🔹 Hämta SHA för filen
+            // Hämta SHA för filen (krävs av GitHub Content API vid delete)
             var shaUrl = $"https://api.github.com/repos/{_userName}/{_repository}/contents/{relativePath}?ref={_branch}";
             var shaResponse = await _httpClient.GetAsync(shaUrl);
             if (!shaResponse.IsSuccessStatusCode) return;
@@ -166,11 +170,12 @@ namespace SarasBloggAPI.Services
             if (!jsonDoc.RootElement.TryGetProperty("sha", out var shaProp)) return;
 
             var sha = shaProp.GetString();
+            if (string.IsNullOrWhiteSpace(sha)) return;
 
             var body = new
             {
                 message = $"Delete {relativePath} via SarasBlogg",
-                sha = sha,
+                sha,
                 branch = _branch
             };
 
@@ -186,7 +191,8 @@ namespace SarasBloggAPI.Services
             var deleteResponse = await _httpClient.SendAsync(deleteRequest);
             if (!deleteResponse.IsSuccessStatusCode)
             {
-                Console.WriteLine($"[GitHub] Failed to delete image: {deleteResponse.StatusCode}");
+                var err = await deleteResponse.Content.ReadAsStringAsync();
+                Console.WriteLine($"[GitHub] Failed to delete image: {(int)deleteResponse.StatusCode} {deleteResponse.ReasonPhrase} {err}");
             }
         }
 
@@ -204,14 +210,13 @@ namespace SarasBloggAPI.Services
             var timestamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd_HHmmssfff");
             var random4 = RandomNumberGenerator.GetInt32(0, 10_000).ToString("D4");
             return $"{random4}-{timestamp}_{original}";
-
         }
 
         // robust mot "uploads/uploads"
         private static string BuildUploadPath(string root, string folder, string? bloggId, string? fileName)
         {
-            var r = (root ?? "uploads").Trim().Trim('/', '\\'); // uploads
-            var f = (folder ?? "").Trim().Trim('/', '\\');      // blogg / uploads/blogg
+            var r = (root ?? "uploads").Trim().Trim('/', '\\'); // ex: uploads
+            var f = (folder ?? "").Trim().Trim('/', '\\');        // ex: blogg eller uploads/blogg
             if (f.StartsWith(r + "/", StringComparison.OrdinalIgnoreCase)) f = f[(r.Length + 1)..];
             if (string.Equals(f, r, StringComparison.OrdinalIgnoreCase)) f = "";
 
@@ -241,6 +246,7 @@ namespace SarasBloggAPI.Services
                 {
                     var type = item.GetProperty("type").GetString(); // "file" | "dir"
                     var itemPath = item.GetProperty("path").GetString();
+
                     if (type == "file")
                     {
                         var sha = item.GetProperty("sha").GetString();
@@ -267,27 +273,45 @@ namespace SarasBloggAPI.Services
         {
             var body = new { message = $"Delete {repoPath} via SarasBlogg", sha, branch = _branch };
             var req = new HttpRequestMessage(HttpMethod.Delete,
-                $"https://api.github.com/repos/{_userName}/{_repository}/contents/{repoPath}")
+                        $"https://api.github.com/repos/{_userName}/{_repository}/contents/{repoPath}")
             {
                 Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")
             };
-            await _httpClient.SendAsync(req);
+            var resp = await _httpClient.SendAsync(req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var err = await resp.Content.ReadAsStringAsync();
+                Console.WriteLine($"[GitHub] DeleteByPathAndShaAsync failed: {(int)resp.StatusCode} {resp.ReasonPhrase} {err}");
+            }
         }
 
-        private static readonly HttpStatusCode[] Retryable =
+        // ----- Robust retry för GitHub Content API (skriver/commits) -----
+        private static readonly HashSet<int> RetryableStatusCodes = new()
         {
-             HttpStatusCode.Conflict,                 // 409 (fast-forward/conflict)
-             (HttpStatusCode)422,                     // 422 (GitHub Content API "Unprocessable" transient)
-             HttpStatusCode.Forbidden,                // 403 (abuse/secondary rate limit)
-             HttpStatusCode.InternalServerError,      // 500
-             HttpStatusCode.BadGateway,               // 502
-             HttpStatusCode.ServiceUnavailable,       // 503
-             HttpStatusCode.GatewayTimeout,           // 504
-             // 429 är inte alltid i enum i äldre ramverk – kasta som int om behövs:
-             (HttpStatusCode)429                      // Too Many Requests
-         };
+            (int)HttpStatusCode.Conflict,            // 409
+            422,                                     // GitHub "Unprocessable" (transient ibland)
+            (int)HttpStatusCode.Forbidden,           // 403 (abuse/secondary rate limit)
+            (int)HttpStatusCode.InternalServerError, // 500
+            (int)HttpStatusCode.BadGateway,          // 502
+            (int)HttpStatusCode.ServiceUnavailable,  // 503
+            (int)HttpStatusCode.GatewayTimeout,      // 504
+            429                                      // Too Many Requests
+        };
 
-        private async Task<HttpResponseMessage> PutWithRetryAsync(string url, string jsonPayload, int maxAttempts = 4)
+        private static int ComputeDelayMs(HttpResponseMessage resp, int attempt)
+        {
+            if (resp.Headers.TryGetValues("Retry-After", out var values))
+            {
+                var raw = values.FirstOrDefault();
+                if (int.TryParse(raw, out var seconds) && seconds > 0)
+                    return seconds * 1000 + Random.Shared.Next(50, 250);
+                // (om datum ges kan du parsa om du vill)
+            }
+            // Exponentiell backoff + jitter
+            return (500 * attempt * attempt) + Random.Shared.Next(0, 300);
+        }
+
+        private async Task<HttpResponseMessage> PutWithRetryAsync(string url, string jsonPayload, int maxAttempts = 5)
         {
             for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
@@ -295,13 +319,13 @@ namespace SarasBloggAPI.Services
                 var resp = await _httpClient.PutAsync(url, content);
                 if (resp.IsSuccessStatusCode) return resp;
 
-                // Liten, säker retry på GitHub-content edge-caser
-                if (Array.IndexOf(Retryable, resp.StatusCode) >= 0 && attempt < maxAttempts)
+                var status = (int)resp.StatusCode;
+                if (attempt < maxAttempts && RetryableStatusCodes.Contains(status))
                 {
-                    var delayMs = 400 * attempt * attempt + Random.Shared.Next(0, 200);
-                    await Task.Delay(delayMs);
+                    await Task.Delay(ComputeDelayMs(resp, attempt));
                     continue;
                 }
+
                 return resp;
             }
             return new HttpResponseMessage(HttpStatusCode.InternalServerError);
