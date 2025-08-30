@@ -262,10 +262,17 @@ namespace SarasBloggAPI
             else
             {
                 // Viktigt bakom proxy (Render)
-                app.UseForwardedHeaders(new ForwardedHeadersOptions
+                var fwd = new ForwardedHeadersOptions
                 {
-                    ForwardedHeaders = ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedFor
-                });
+                    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+                };
+                // Tillåt vilken proxy som helst (Render roterar IP:er)
+                fwd.KnownNetworks.Clear();
+                fwd.KnownProxies.Clear();
+                fwd.ForwardLimit = null;
+
+                // VIKTIGT: lägg detta TIDIGT i pipeline, innan auth/cors/etc.
+                app.UseForwardedHeaders(fwd);
 
                 // Ingen app.UseHttpsRedirection() i prod på Render
             }

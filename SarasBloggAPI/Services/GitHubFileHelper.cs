@@ -51,6 +51,7 @@ namespace SarasBloggAPI.Services
             _http.DefaultRequestHeaders.UserAgent.ParseAdd("SarasBlogg/1.0");
             _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _token);
             _http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+            _http.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
 
             // (valfritt) om du vill kunna byta "uploads"-roten via config:
             _rootFolder = cfg["GitHub:UploadFolder"] ?? cfg["GitHubUpload:UploadFolder"] ?? "uploads";
