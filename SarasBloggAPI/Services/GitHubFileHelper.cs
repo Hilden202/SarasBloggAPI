@@ -1,334 +1,366 @@
 ﻿using System;
+using System.Buffers;
 using System.Collections.Generic;
-using System.Linq;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace SarasBloggAPI.Services
 {
-    public class GitHubFileHelper : IFileHelper
+    /// <summary>
+    /// Lagrar/raderar filer i ett GitHub-repo via Contents API på ett minnessnålt sätt:
+    /// - Base64-kodar bilddata i ström
+    /// - Skriver hela GitHub-JSON:en till en tempfil (ingen stor sträng i RAM)
+    /// - Skickar JSON med StreamContent och per-försök-ny request (retry-safe)
+    /// </summary>
+    public sealed class GitHubFileHelper : IFileHelper
     {
-        private readonly HttpClient _httpClient;
-        private readonly IConfiguration _config;
-
-        private readonly string _token;
-        private readonly string _userName;
-        private readonly string _repository;
+        private readonly HttpClient _http;
+        private readonly ILogger<GitHubFileHelper>? _logger;
+        private readonly string _owner;
+        private readonly string _repo;
         private readonly string _branch;
-        private readonly string _uploadFolder;
+        private readonly string _token;
+        private readonly string _rootFolder = "uploads";
 
-        public GitHubFileHelper(IConfiguration config)
+
+        public GitHubFileHelper(HttpClient http, IConfiguration cfg, ILogger<GitHubFileHelper>? logger = null)
         {
-            _config = config;
-            _httpClient = new HttpClient();
+            _http = http ?? throw new ArgumentNullException(nameof(http));
+            _logger = logger;
 
-            _token = _config["GitHubUpload:Token"];
-            _userName = _config["GitHubUpload:UserName"];
-            _repository = _config["GitHubUpload:Repository"];
-            _branch = _config["GitHubUpload:Branch"];
-            _uploadFolder = _config["GitHubUpload:UploadFolder"];
+            // Stöd både "GitHub:*" och "GitHubUpload:*" (back-compat)
+            _owner = cfg["GitHub:Owner"] ?? cfg["GitHubUpload:UserName"]
+                      ?? throw new InvalidOperationException("GitHub Owner/UserName saknas.");
 
-            _httpClient.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", _token);
-            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("SarasBloggApp");
-            _httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
-            _httpClient.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
+            _repo = cfg["GitHub:Repo"] ?? cfg["GitHubUpload:Repository"]
+                      ?? throw new InvalidOperationException("GitHub Repo/Repository saknas.");
+
+            _branch = cfg["GitHub:Branch"] ?? cfg["GitHubUpload:Branch"] ?? "main";
+            _token = cfg["GitHub:Token"] ?? cfg["GitHubUpload:Token"]
+                      ?? throw new InvalidOperationException("GitHub Token saknas.");
+
+            _http.DefaultRequestHeaders.UserAgent.ParseAdd("SarasBlogg/1.0");
+            _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _token);
+            _http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+
+            // (valfritt) om du vill kunna byta "uploads"-roten via config:
+            _rootFolder = cfg["GitHub:UploadFolder"] ?? cfg["GitHubUpload:UploadFolder"] ?? "uploads";
         }
 
-        // ---------- SAVE (bloggId-mappar) ----------
-        public async Task<string?> SaveImageAsync(IFormFile file, int bloggId, string folderName = "blogg")
-        {
-            if (file is null || file.Length == 0) return null;
 
-            var fileName = GenerateFileName(file);
-            var uploadPath = BuildUploadPath(_uploadFolder, folderName, bloggId.ToString(), fileName);
+        // --- IFileHelper ---
 
-            var tempPath = Path.Combine(Path.GetTempPath(), fileName);
-            try
-            {
-                using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
-                    await file.CopyToAsync(fs);
-
-                var bytes = await File.ReadAllBytesAsync(tempPath);
-                var body = new
-                {
-                    message = $"Upload {uploadPath} via SarasBlogg",
-                    content = Convert.ToBase64String(bytes),
-                    branch = _branch
-                };
-
-                var url = $"https://api.github.com/repos/{_userName}/{_repository}/contents/{uploadPath}";
-                var json = JsonSerializer.Serialize(body);
-                var resp = await PutWithRetryAsync(url, json);
-                if (!resp.IsSuccessStatusCode)
-                {
-                    var ghBody = await resp.Content.ReadAsStringAsync();
-                    throw new HttpRequestException($"GitHub PUT failed {(int)resp.StatusCode} {resp.ReasonPhrase}: {ghBody}");
-                }
-
-                // Returnera RAW-URL som kan användas direkt i <img>
-                return $"https://raw.githubusercontent.com/{_userName}/{_repository}/{_branch}/{uploadPath}";
-            }
-            finally
-            {
-                if (File.Exists(tempPath)) File.Delete(tempPath);
-            }
-        }
-
-        // ---------- SAVE (bakåtkompatibel) ----------
+        // Bakåt-compat (utan bloggId): lägg i uploads/{folderName}/
         public async Task<string?> SaveImageAsync(IFormFile file, string folderName)
         {
-            if (file is null || file.Length == 0) return null;
+            if (file == null) throw new ArgumentNullException(nameof(file));
 
-            var fileName = GenerateFileName(file);
-            var uploadPath = BuildUploadPath(_uploadFolder, folderName, null, fileName);
+            var ext = SafeExtension(file.FileName);
+            var fileName = $"{Guid.NewGuid():N}{ext}";
+            var repoPath = string.Join('/', _rootFolder, folderName ?? "misc", fileName);
 
-            var tempPath = Path.Combine(Path.GetTempPath(), fileName);
+            return await PutFileToGitHubAsync(file, repoPath);
+        }
+
+        // Primär: i uploads/{folderName}/{bloggId}/
+        public async Task<string?> SaveImageAsync(IFormFile file, int bloggId, string folderName = "blogg")
+        {
+            if (file == null) throw new ArgumentNullException(nameof(file));
+
+            var ext = SafeExtension(file.FileName);
+            var fileName = $"{Guid.NewGuid():N}{ext}";
+            var repoPath = string.Join('/', _rootFolder, folderName ?? "blogg", bloggId.ToString(), fileName);
+
+            return await PutFileToGitHubAsync(file, repoPath);
+        }
+
+        public async Task DeleteImageAsync(string imageUrl, string folder)
+        {
+            // Stöd både raw-url och repo-relativ path
+            var repoPath = TryExtractRepoPathFromRawUrl(imageUrl) ?? imageUrl.TrimStart('/');
+            if (string.IsNullOrWhiteSpace(repoPath))
+            {
+                _logger?.LogWarning("DeleteImageAsync: tomt repoPath för url '{Url}'", imageUrl);
+                return;
+            }
+
+            var sha = await GetContentShaAsync(repoPath);
+            if (sha == null)
+            {
+                _logger?.LogInformation("DeleteImageAsync: {Path} saknar sha (kanske redan raderad).", repoPath);
+                return;
+            }
+
+            var deleteUrl = BuildContentsUrl(repoPath);
+            var payload = new { message = "Delete blog image", branch = _branch, sha };
+            var payloadBytes = JsonSerializer.SerializeToUtf8Bytes(payload); // liten payload → ok i minnet
+
+            using var resp = await SendWithRetryAsync(() =>
+            {
+                var content = new ByteArrayContent(payloadBytes);
+                content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+                return new HttpRequestMessage(HttpMethod.Delete, deleteUrl) { Content = content };
+            });
+
+            resp.EnsureSuccessStatusCode();
+        }
+
+
+        public async Task DeleteBlogFolderAsync(int bloggId, string folderName = "blogg")
+        {
+            var repoPath = string.Join('/', _rootFolder, folderName ?? "blogg", bloggId.ToString());
+            await DeleteFolderRecursiveAsync(repoPath);
+        }
+
+        // --- Upload helper ---
+
+        private async Task<string?> PutFileToGitHubAsync(IFormFile file, string repoPath)
+        {
+            var putUrl = BuildContentsUrl(repoPath);
+
+            // Skriv GitHub-JSON till TEMP-fil medan vi strömmar Base64 (minimerar RAM)
+            var tmpJsonPath = Path.GetTempFileName();
+
             try
             {
-                using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
-                    await file.CopyToAsync(fs);
-
-                var bytes = await File.ReadAllBytesAsync(tempPath);
-                var body = new
+                await using (var fs = new FileStream(tmpJsonPath, FileMode.Create, FileAccess.Write, FileShare.None, 4096))
+                await using (var writer = new StreamWriter(fs, new UTF8Encoding(false)))
                 {
-                    message = $"Upload {uploadPath} via SarasBlogg",
-                    content = Convert.ToBase64String(bytes),
-                    branch = _branch
-                };
+                    // JSON-head
+                    await writer.WriteAsync("{\"message\":\"Add blog image\",\"branch\":\"");
+                    await writer.WriteAsync(_branch);
+                    await writer.WriteAsync("\",\"content\":\"");
+                    await writer.FlushAsync(); // flush innan vi skriver råa base64-bytes
 
-                var url = $"https://api.github.com/repos/{_userName}/{_repository}/contents/{uploadPath}";
-                var json = JsonSerializer.Serialize(body);
-                var resp = await PutWithRetryAsync(url, json);
-                if (!resp.IsSuccessStatusCode)
-                {
-                    var ghBody = await resp.Content.ReadAsStringAsync();
-                    throw new HttpRequestException($"GitHub PUT failed {(int)resp.StatusCode} {resp.ReasonPhrase}: {ghBody}");
+                    // Base64-transform
+                    await using var inStream = file.OpenReadStream();
+                    using var b64 = new ToBase64Transform();
+
+                    var inBuf = ArrayPool<byte>.Shared.Rent(64 * 1024);
+                    var outBuf = ArrayPool<byte>.Shared.Rent(((64 * 1024) / 3 + 2) * 4); // safe
+
+                    var tail = new byte[2];
+                    var tailLen = 0;
+
+                    try
+                    {
+                        while (true)
+                        {
+                            var read = await inStream.ReadAsync(inBuf, 0, inBuf.Length);
+                            if (read == 0) break;
+
+                            var total = tailLen + read;
+                            var span = new byte[total];
+                            Buffer.BlockCopy(tail, 0, span, 0, tailLen);
+                            Buffer.BlockCopy(inBuf, 0, span, tailLen, read);
+
+                            var fullLen = total - (total % b64.InputBlockSize);
+                            var outLen = b64.TransformBlock(span, 0, fullLen, outBuf, 0);
+                            await fs.WriteAsync(outBuf.AsMemory(0, outLen));
+
+                            tailLen = total - fullLen;
+                            if (tailLen > 0)
+                                Buffer.BlockCopy(span, fullLen, tail, 0, tailLen);
+                        }
+
+                        var final = b64.TransformFinalBlock(tail, 0, tailLen);
+                        if (final.Length > 0)
+                            await fs.WriteAsync(final, 0, final.Length);
+                    }
+                    finally
+                    {
+                        ArrayPool<byte>.Shared.Return(inBuf);
+                        ArrayPool<byte>.Shared.Return(outBuf);
+                    }
+
+                    // JSON-tail
+                    await writer.WriteAsync("\"}");
                 }
 
-                return $"https://raw.githubusercontent.com/{_userName}/{_repository}/{_branch}/{uploadPath}";
+                // Skicka PUT med streamad JSON; bygg NY request per försök (retry-safe)
+                using var resp = await SendWithRetryAsync(() =>
+                {
+                    var jsonStream = new FileStream(tmpJsonPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    var content = new StreamContent(jsonStream);
+                    content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+                    return new HttpRequestMessage(HttpMethod.Put, putUrl) { Content = content };
+                });
+
+                resp.EnsureSuccessStatusCode();
+                return BuildRawUrl(repoPath);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Uppladdning misslyckades för {RepoPath}", repoPath);
+                throw;
             }
             finally
             {
-                if (File.Exists(tempPath)) File.Delete(tempPath);
+                try { System.IO.File.Delete(tmpJsonPath); } catch { /* ignore */ }
             }
         }
 
-        // ---------- DELETE (singel-fil) ----------
-        public async Task DeleteImageAsync(string imageUrl, string folder /* ignoreras numer; vi härleder från URL */)
+        // --- GitHub helpers ---
+
+        private string SafeExtension(string fileName)
         {
-            if (string.IsNullOrWhiteSpace(imageUrl))
-                return;
+            var ext = Path.GetExtension(fileName);
+            if (string.IsNullOrWhiteSpace(ext)) return ".bin";
+            // sanera extremfall (t.ex. .heic -> behåll men du kan mappa om här om du vill)
+            return ext;
+        }
 
-            string? relativePath = null;
+        private string BuildContentsUrl(string repoPath)
+        {
+            var pathEscaped = Uri.EscapeDataString(repoPath).Replace("%2F", "/");
+            return $"https://api.github.com/repos/{_owner}/{_repo}/contents/{pathEscaped}";
+        }
 
-            // Försök hitta path via _uploadFolder (t.ex. "uploads/")
-            var marker = $"{_uploadFolder}/";
-            var start = imageUrl.IndexOf(marker, StringComparison.Ordinal);
-            if (start != -1)
+        private string BuildRawUrl(string repoPath)
+        {
+            var segs = repoPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < segs.Length; i++) segs[i] = Uri.EscapeDataString(segs[i]);
+            return $"https://raw.githubusercontent.com/{_owner}/{_repo}/{_branch}/{string.Join('/', segs)}";
+        }
+
+        private string? TryExtractRepoPathFromRawUrl(string url)
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return null;
+            if (!"raw.githubusercontent.com".Equals(uri.Host, StringComparison.OrdinalIgnoreCase)) return null;
+
+            // /{owner}/{repo}/{branch}/{path...}
+            var segs = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (segs.Length < 4) return null;
+            if (!string.Equals(segs[0], _owner, StringComparison.OrdinalIgnoreCase)) return null;
+            if (!string.Equals(segs[1], _repo, StringComparison.OrdinalIgnoreCase)) return null;
+
+            var pathSegs = new List<string>();
+            for (int i = 3; i < segs.Length; i++)
+                pathSegs.Add(Uri.UnescapeDataString(segs[i]));
+            return string.Join('/', pathSegs);
+        }
+
+        private async Task<string?> GetContentShaAsync(string repoPath)
+        {
+            var url = BuildContentsUrl(repoPath) + $"?ref={Uri.EscapeDataString(_branch)}";
+            using var resp = await _http.GetAsync(url);
+            if (resp.StatusCode == HttpStatusCode.NotFound) return null;
+            resp.EnsureSuccessStatusCode();
+
+            await using var s = await resp.Content.ReadAsStreamAsync();
+            using var doc = await JsonDocument.ParseAsync(s);
+
+            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty("sha", out var shaProp))
             {
-                relativePath = imageUrl.Substring(start); // ex: uploads/blogg/123/fil.png
+                return shaProp.GetString();
             }
-            else
+            return null;
+        }
+
+        private async Task DeleteFolderRecursiveAsync(string repoPath)
+        {
+            var listUrl = BuildContentsUrl(repoPath) + $"?ref={Uri.EscapeDataString(_branch)}";
+            using var resp = await _http.GetAsync(listUrl);
+            if (resp.StatusCode == HttpStatusCode.NotFound) return;
+            resp.EnsureSuccessStatusCode();
+
+            await using var s = await resp.Content.ReadAsStreamAsync();
+            using var doc = await JsonDocument.ParseAsync(s);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array) return;
+
+            var dirs = new List<string>();
+
+            foreach (var item in doc.RootElement.EnumerateArray())
             {
-                // Fallback: hantera raw.githubusercontent.com-URL:er
-                try
+                var type = item.GetProperty("type").GetString();
+                var path = item.GetProperty("path").GetString();
+                if (string.IsNullOrEmpty(type) || string.IsNullOrEmpty(path)) continue;
+
+                if (type == "file")
                 {
-                    var uri = new Uri(imageUrl);
-                    var segments = uri.Segments
-                        .Select(s => s.Trim('/'))
-                        .Where(s => !string.IsNullOrEmpty(s))
-                        .ToArray();
+                    var sha = item.GetProperty("sha").GetString();
+                    var deleteUrl = BuildContentsUrl(path);
+                    var payload = new { message = "Delete blog image", branch = _branch, sha };
 
-                    // Format: user / repo / branch / uploads / blogg / 123 / filename
-                    var branchIndex = Array.IndexOf(segments, _branch);
-                    if (branchIndex != -1 && branchIndex + 1 < segments.Length)
-                        relativePath = string.Join('/', segments.Skip(branchIndex + 1));
-                }
-                catch
-                {
-                    return; // Ogiltig URL → ge upp tyst
-                }
-            }
-
-            if (string.IsNullOrEmpty(relativePath))
-                return;
-
-            // Hämta SHA för filen (krävs av GitHub Content API vid delete)
-            var shaUrl = $"https://api.github.com/repos/{_userName}/{_repository}/contents/{relativePath}?ref={_branch}";
-            var shaResponse = await _httpClient.GetAsync(shaUrl);
-            if (!shaResponse.IsSuccessStatusCode) return;
-
-            using var jsonDoc = JsonDocument.Parse(await shaResponse.Content.ReadAsStringAsync());
-            if (!jsonDoc.RootElement.TryGetProperty("sha", out var shaProp)) return;
-
-            var sha = shaProp.GetString();
-            if (string.IsNullOrWhiteSpace(sha)) return;
-
-            var body = new
-            {
-                message = $"Delete {relativePath} via SarasBlogg",
-                sha,
-                branch = _branch
-            };
-
-            var json = JsonSerializer.Serialize(body);
-            var deleteContent = new StringContent(json, Encoding.UTF8, "application/json");
-
-            var deleteUrl = $"https://api.github.com/repos/{_userName}/{_repository}/contents/{relativePath}";
-            var deleteRequest = new HttpRequestMessage(HttpMethod.Delete, deleteUrl)
-            {
-                Content = deleteContent
-            };
-
-            var deleteResponse = await _httpClient.SendAsync(deleteRequest);
-            if (!deleteResponse.IsSuccessStatusCode)
-            {
-                var err = await deleteResponse.Content.ReadAsStringAsync();
-                Console.WriteLine($"[GitHub] Failed to delete image: {(int)deleteResponse.StatusCode} {deleteResponse.ReasonPhrase} {err}");
-            }
-        }
-
-        // ---------- DELETE (hela blogg-mappen) ----------
-        public async Task DeleteBlogFolderAsync(int bloggId, string folderName = "blogg")
-        {
-            var path = BuildUploadPath(_uploadFolder, folderName, bloggId.ToString(), fileName: null);
-            await DeleteDirectoryRecursiveAsync(path);
-        }
-
-        // ---------- helpers ----------
-        private static string GenerateFileName(IFormFile file)
-        {
-            var original = Path.GetFileName(file.FileName);
-            var timestamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd_HHmmssfff");
-            var random4 = RandomNumberGenerator.GetInt32(0, 10_000).ToString("D4");
-            return $"{random4}-{timestamp}_{original}";
-        }
-
-        // robust mot "uploads/uploads"
-        private static string BuildUploadPath(string root, string folder, string? bloggId, string? fileName)
-        {
-            var r = (root ?? "uploads").Trim().Trim('/', '\\'); // ex: uploads
-            var f = (folder ?? "").Trim().Trim('/', '\\');        // ex: blogg eller uploads/blogg
-            if (f.StartsWith(r + "/", StringComparison.OrdinalIgnoreCase)) f = f[(r.Length + 1)..];
-            if (string.Equals(f, r, StringComparison.OrdinalIgnoreCase)) f = "";
-
-            var id = (bloggId ?? "").Trim().Trim('/', '\\');
-
-            var parts = new List<string>();
-            if (!string.IsNullOrEmpty(r)) parts.Add(r);
-            if (!string.IsNullOrEmpty(f)) parts.Add(f);
-            if (!string.IsNullOrEmpty(id)) parts.Add(id);
-            if (!string.IsNullOrEmpty(fileName)) parts.Add(fileName);
-
-            return string.Join('/', parts);
-        }
-
-        private async Task DeleteDirectoryRecursiveAsync(string path)
-        {
-            var listUrl = $"https://api.github.com/repos/{_userName}/{_repository}/contents/{path}?ref={_branch}";
-            var resp = await _httpClient.GetAsync(listUrl);
-            if (!resp.IsSuccessStatusCode) return;
-
-            var json = await resp.Content.ReadAsStringAsync();
-            using var doc = JsonDocument.Parse(json);
-
-            if (doc.RootElement.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in doc.RootElement.EnumerateArray())
-                {
-                    var type = item.GetProperty("type").GetString(); // "file" | "dir"
-                    var itemPath = item.GetProperty("path").GetString();
-
-                    if (type == "file")
+                    using var respDel = await SendWithRetryAsync(() =>
                     {
-                        var sha = item.GetProperty("sha").GetString();
-                        if (!string.IsNullOrEmpty(itemPath) && !string.IsNullOrEmpty(sha))
-                            await DeleteByPathAndShaAsync(itemPath!, sha!);
-                    }
-                    else if (type == "dir")
-                    {
-                        await DeleteDirectoryRecursiveAsync(itemPath!);
-                    }
+                        var json = JsonSerializer.Serialize(payload); // liten payload
+                        var content = new StringContent(json, Encoding.UTF8, "application/json");
+                        return new HttpRequestMessage(HttpMethod.Delete, deleteUrl) { Content = content };
+                    });
+                    respDel.EnsureSuccessStatusCode();
                 }
-            }
-            else if (doc.RootElement.ValueKind == JsonValueKind.Object &&
-                     doc.RootElement.TryGetProperty("type", out var t) &&
-                     t.GetString() == "file")
-            {
-                var sha = doc.RootElement.GetProperty("sha").GetString();
-                if (!string.IsNullOrEmpty(sha))
-                    await DeleteByPathAndShaAsync(path, sha!);
-            }
-        }
-
-        private async Task DeleteByPathAndShaAsync(string repoPath, string sha)
-        {
-            var body = new { message = $"Delete {repoPath} via SarasBlogg", sha, branch = _branch };
-            var req = new HttpRequestMessage(HttpMethod.Delete,
-                        $"https://api.github.com/repos/{_userName}/{_repository}/contents/{repoPath}")
-            {
-                Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")
-            };
-            var resp = await _httpClient.SendAsync(req);
-            if (!resp.IsSuccessStatusCode)
-            {
-                var err = await resp.Content.ReadAsStringAsync();
-                Console.WriteLine($"[GitHub] DeleteByPathAndShaAsync failed: {(int)resp.StatusCode} {resp.ReasonPhrase} {err}");
-            }
-        }
-
-        // ----- Robust retry för GitHub Content API (skriver/commits) -----
-        private static readonly HashSet<int> RetryableStatusCodes = new()
-        {
-            (int)HttpStatusCode.Conflict,            // 409
-            422,                                     // GitHub "Unprocessable" (transient ibland)
-            (int)HttpStatusCode.Forbidden,           // 403 (abuse/secondary rate limit)
-            (int)HttpStatusCode.InternalServerError, // 500
-            (int)HttpStatusCode.BadGateway,          // 502
-            (int)HttpStatusCode.ServiceUnavailable,  // 503
-            (int)HttpStatusCode.GatewayTimeout,      // 504
-            429                                      // Too Many Requests
-        };
-
-        private static int ComputeDelayMs(HttpResponseMessage resp, int attempt)
-        {
-            if (resp.Headers.TryGetValues("Retry-After", out var values))
-            {
-                var raw = values.FirstOrDefault();
-                if (int.TryParse(raw, out var seconds) && seconds > 0)
-                    return seconds * 1000 + Random.Shared.Next(50, 250);
-                // (om datum ges kan du parsa om du vill)
-            }
-            // Exponentiell backoff + jitter
-            return (500 * attempt * attempt) + Random.Shared.Next(0, 300);
-        }
-
-        private async Task<HttpResponseMessage> PutWithRetryAsync(string url, string jsonPayload, int maxAttempts = 5)
-        {
-            for (int attempt = 1; attempt <= maxAttempts; attempt++)
-            {
-                using var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
-                var resp = await _httpClient.PutAsync(url, content);
-                if (resp.IsSuccessStatusCode) return resp;
-
-                var status = (int)resp.StatusCode;
-                if (attempt < maxAttempts && RetryableStatusCodes.Contains(status))
+                else if (type == "dir")
                 {
-                    await Task.Delay(ComputeDelayMs(resp, attempt));
-                    continue;
+                    dirs.Add(path);
                 }
-
-                return resp;
             }
-            return new HttpResponseMessage(HttpStatusCode.InternalServerError);
+
+            foreach (var dir in dirs)
+                await DeleteFolderRecursiveAsync(dir);
+        }
+
+        /// <summary>
+        /// Skickar request med exponentiell backoff och stöd för Retry-After.
+        /// Bygger en NY HttpRequestMessage per försök så att streamar kan återskapas.
+        /// </summary>
+        private async Task<HttpResponseMessage> SendWithRetryAsync(Func<HttpRequestMessage> requestFactory, int maxAttempts = 5)
+        {
+            for (var attempt = 1; ; attempt++)
+            {
+                using var req = requestFactory();
+                using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+
+                // 2xx–4xx (förutom 429) -> returnera
+                if ((int)resp.StatusCode < 500 && resp.StatusCode != (HttpStatusCode)429)
+                    return CloneResponse(resp);
+
+                if (attempt >= maxAttempts)
+                    return CloneResponse(resp);
+
+                var delay = TimeSpan.FromMilliseconds(200 * Math.Pow(2, attempt - 1));
+                if (resp.Headers.RetryAfter?.Delta is TimeSpan ra && ra > TimeSpan.Zero)
+                    delay = ra;
+
+                _logger?.LogWarning("GitHub: {Status}. Försök {Attempt}/{Max}. Väntar {Delay}.",
+                    (int)resp.StatusCode, attempt, maxAttempts, delay);
+
+                await Task.Delay(delay);
+            }
+        }
+
+        // Klona svaret eftersom vi disponerar originalet i using
+        private static HttpResponseMessage CloneResponse(HttpResponseMessage resp)
+        {
+            var clone = new HttpResponseMessage(resp.StatusCode)
+            {
+                ReasonPhrase = resp.ReasonPhrase,
+                Version = resp.Version,
+                RequestMessage = resp.RequestMessage
+            };
+
+            foreach (var h in resp.Headers)
+                clone.Headers.TryAddWithoutValidation(h.Key, h.Value);
+
+            if (resp.Content != null)
+            {
+                var bytes = resp.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+                clone.Content = new ByteArrayContent(bytes);
+                foreach (var h in resp.Content.Headers)
+                    clone.Content.Headers.TryAddWithoutValidation(h.Key, h.Value);
+            }
+
+            return clone;
         }
     }
 }

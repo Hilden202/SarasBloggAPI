@@ -182,9 +182,14 @@ namespace SarasBloggAPI
                 builder.Services.AddScoped<IEmailSender, DevEmailSender>();
             }
 
-
             // HTTP-KLIENTER
             builder.Services.AddHttpClient<ContentSafetyService>();
+            builder.Services.AddHttpClient<GitHubFileHelper>(c =>
+            {
+                c.BaseAddress = new Uri("https://api.github.com/");
+                c.DefaultRequestHeaders.UserAgent.ParseAdd("SarasBloggAPI/1.0 (+github.com/hilden202)");
+                c.Timeout = TimeSpan.FromMinutes(2);
+            });
 
             // API-KOMPONENTER
             builder.Services.AddControllers();
