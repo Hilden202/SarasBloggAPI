@@ -33,6 +33,8 @@ namespace SarasBloggAPI.Services
             _httpClient.DefaultRequestHeaders.Authorization =
                 new AuthenticationHeaderValue("Bearer", _token);
             _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("SarasBloggApp");
+            _httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+            _httpClient.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
         }
 
         // ---------- SAVE (bloggId-mappar) ----------
@@ -275,10 +277,16 @@ namespace SarasBloggAPI.Services
 
         private static readonly HttpStatusCode[] Retryable =
         {
-            HttpStatusCode.Conflict,          // 409 (repo lock / write conflict)
-            (HttpStatusCode)422,              // 422 (transient content API issues)
-            HttpStatusCode.Forbidden          // 403 (abuse/secondary rate limit)
-        };
+             HttpStatusCode.Conflict,                 // 409 (fast-forward/conflict)
+             (HttpStatusCode)422,                     // 422 (GitHub Content API "Unprocessable" transient)
+             HttpStatusCode.Forbidden,                // 403 (abuse/secondary rate limit)
+             HttpStatusCode.InternalServerError,      // 500
+             HttpStatusCode.BadGateway,               // 502
+             HttpStatusCode.ServiceUnavailable,       // 503
+             HttpStatusCode.GatewayTimeout,           // 504
+             // 429 är inte alltid i enum i äldre ramverk – kasta som int om behövs:
+             (HttpStatusCode)429                      // Too Many Requests
+         };
 
         private async Task<HttpResponseMessage> PutWithRetryAsync(string url, string jsonPayload, int maxAttempts = 4)
         {
