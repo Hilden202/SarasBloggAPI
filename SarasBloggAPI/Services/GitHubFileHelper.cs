@@ -3,6 +3,8 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using System.Security.Cryptography;
+using System.Net;
+using System;
 
 namespace SarasBloggAPI.Services
 {
@@ -55,11 +57,14 @@ namespace SarasBloggAPI.Services
                     branch = _branch
                 };
 
-                var resp = await _httpClient.PutAsync(
-                    $"https://api.github.com/repos/{_userName}/{_repository}/contents/{uploadPath}",
-                    new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"));
-
-                resp.EnsureSuccessStatusCode();
+                var url = $"https://api.github.com/repos/{_userName}/{_repository}/contents/{uploadPath}";
+                var json = JsonSerializer.Serialize(body);
+                var resp = await PutWithRetryAsync(url, json);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    var ghBody = await resp.Content.ReadAsStringAsync();
+                    throw new HttpRequestException($"GitHub PUT failed {(int)resp.StatusCode}: {ghBody}");
+                }
 
                 return $"https://raw.githubusercontent.com/{_userName}/{_repository}/{_branch}/{uploadPath}";
             }
@@ -91,11 +96,14 @@ namespace SarasBloggAPI.Services
                     branch = _branch
                 };
 
-                var resp = await _httpClient.PutAsync(
-                    $"https://api.github.com/repos/{_userName}/{_repository}/contents/{uploadPath}",
-                    new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"));
-
-                resp.EnsureSuccessStatusCode();
+                var url = $"https://api.github.com/repos/{_userName}/{_repository}/contents/{uploadPath}";
+                var json = JsonSerializer.Serialize(body);
+                var resp = await PutWithRetryAsync(url, json);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    var ghBody = await resp.Content.ReadAsStringAsync();
+                    throw new HttpRequestException($"GitHub PUT failed {(int)resp.StatusCode}: {ghBody}");
+                }
 
                 return $"https://raw.githubusercontent.com/{_userName}/{_repository}/{_branch}/{uploadPath}";
             }
@@ -265,34 +273,33 @@ namespace SarasBloggAPI.Services
             await _httpClient.SendAsync(req);
         }
 
-        private static string? ExtractRelativePath(string imageUrl)
+        private static readonly HttpStatusCode[] Retryable =
         {
-            if (string.IsNullOrWhiteSpace(imageUrl)) return null;
+            HttpStatusCode.Conflict,          // 409 (repo lock / write conflict)
+            (HttpStatusCode)422,              // 422 (transient content API issues)
+            HttpStatusCode.Forbidden          // 403 (abuse/secondary rate limit)
+        };
 
-            if (imageUrl.Contains("raw.githubusercontent.com", StringComparison.OrdinalIgnoreCase))
+        private async Task<HttpResponseMessage> PutWithRetryAsync(string url, string jsonPayload, int maxAttempts = 4)
+        {
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                var uri = new Uri(imageUrl);
-                var segs = uri.Segments.Select(s => s.Trim('/')).ToArray();
-                // ["", user, repo, branch, uploads, ...]
-                if (segs.Length >= 5)
-                {
-                    // hoppa över user, repo, branch
-                    return string.Join('/', segs.Skip(4));
-                }
+                // Skapa NY StringContent varje försök (HttpContent kan inte återanvändas)
+                using var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+                var resp = await _httpClient.PutAsync(url, content);
+                if (resp.IsSuccessStatusCode) return resp;
+
+                var retryable = Array.IndexOf(Retryable, resp.StatusCode) >= 0;
+                if (!retryable || attempt == maxAttempts) return resp;
+
+                // 0.4s, 1.6s, 3.6s (kvadratisk backoff) + lite jitter
+                var delayMs = 400 * attempt * attempt + Random.Shared.Next(0, 200);
+                await Task.Delay(delayMs);
             }
-            else if (imageUrl.Contains("/repos/", StringComparison.OrdinalIgnoreCase)
-                  && imageUrl.Contains("/contents/", StringComparison.OrdinalIgnoreCase))
-            {
-                var marker = "/contents/";
-                var idx = imageUrl.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
-                if (idx != -1)
-                {
-                    var after = imageUrl[(idx + marker.Length)..];
-                    var qIdx = after.IndexOf('?', StringComparison.Ordinal);
-                    return qIdx >= 0 ? after[..qIdx] : after;
-                }
-            }
-            return null;
+
+            // Defensive fallback
+            return new HttpResponseMessage(HttpStatusCode.InternalServerError);
         }
 
     }
