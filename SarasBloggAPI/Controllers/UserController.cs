@@ -121,6 +121,11 @@ namespace SarasBloggAPI.Controllers
             if (dto is null || string.IsNullOrWhiteSpace(dto.NewUserName))
                 return BadRequest(new BasicResultDto { Succeeded = false, Message = "New username is required." });
 
+            // Förhindra dubblett av användarnamn
+            var exists = await _userManager.FindByNameAsync(dto.NewUserName);
+            if (exists is not null && exists.Id != id)
+                return BadRequest(new BasicResultDto { Succeeded = false, Message = "Username already in use." });
+
             var result = await _userManagerService.ChangeUserNameAsync(id, dto.NewUserName);
             return result.Succeeded ? Ok(result) : BadRequest(result);
         }
@@ -138,6 +143,10 @@ namespace SarasBloggAPI.Controllers
             var myId = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrEmpty(myId))
                 return Unauthorized();
+
+            var exists = await _userManager.FindByNameAsync(dto.NewUserName);
+            if (exists is not null && exists.Id != myId)
+                return BadRequest(new BasicResultDto { Succeeded = false, Message = "Username already in use." });
 
             var result = await _userManagerService.ChangeUserNameAsync(myId, dto.NewUserName);
             return result.Succeeded ? Ok(result) : BadRequest(result);

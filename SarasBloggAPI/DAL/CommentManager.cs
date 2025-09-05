@@ -26,9 +26,19 @@ namespace SarasBloggAPI.DAL
             if (emails.Count > 0)
             {
                 var map = await _context.Users
-                              .Where(u => u.Email != null && emails.Contains(u.Email))
-                                .Select(u => new { u.Email, u.UserName })
-                                .ToDictionaryAsync(x => x.Email!, x => x.UserName ?? "", StringComparer.OrdinalIgnoreCase);
+                    .Where(u => u.Email != null && emails.Contains(u.Email))
+                    .GroupBy(u => u.Email!)
+                    .Select(g => new
+                    {
+                        Email = g.Key,
+                        // choose a single username per email; tweak the ordering as you like
+                        UserName = g
+                            .OrderByDescending(x => x.EmailConfirmed)
+                            .Select(x => x.UserName)
+                            .FirstOrDefault()
+                    })
+                    .ToDictionaryAsync(x => x.Email, x => x.UserName ?? "", StringComparer.OrdinalIgnoreCase);
+
 
                 foreach (var c in list)
                 {

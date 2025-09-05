@@ -69,6 +69,16 @@ public class AuthController : ControllerBase
             BirthYear = dto.BirthYear
         };
 
+        // Unik e-post?
+        var existingByEmail = await _userManager.FindByEmailAsync(dto.Email);
+        if (existingByEmail is not null)
+            return Conflict(new BasicResultDto { Succeeded = false, Message = "Email already in use." });
+
+        // Unikt användarnamn?
+        var existingByName = await _userManager.FindByNameAsync(dto.UserName);
+        if (existingByName is not null)
+            return Conflict(new BasicResultDto { Succeeded = false, Message = "Username already in use." });
+
         var create = await _userManager.CreateAsync(user, dto.Password);
         if (!create.Succeeded)
         {

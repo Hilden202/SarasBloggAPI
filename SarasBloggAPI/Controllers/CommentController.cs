@@ -6,6 +6,7 @@ using SarasBloggAPI.DAL;
 using SarasBloggAPI.Data;
 using SarasBloggAPI.Services;
 using SarasBloggAPI.DTOs;
+using Microsoft.EntityFrameworkCore;
 
 namespace SarasBloggAPI.Controllers
 {
@@ -61,11 +62,21 @@ namespace SarasBloggAPI.Controllers
             var name = c.Name;
             string? topRole = null;
 
-            // Medlemskommentar: översätt till *aktuellt* username + beräkna topproll
             if (!string.IsNullOrWhiteSpace(c.Email))
             {
-                name = await ResolveCurrentUserNameByEmailAsync(c.Email) ?? c.Name;
-                topRole = await ResolveTopRoleByEmailAsync(c.Email);
+                try
+                {
+                    var (user, top) = await ResolveBestUserByEmailAsync(c.Email);
+                    if (user != null)
+                    {
+                        name = user.UserName ?? name;
+                        topRole = top;
+                    }
+                }
+                catch
+                {
+                    // ignore lookup errors – render the comment anyway
+                }
             }
 
             return new CommentDto
@@ -79,6 +90,36 @@ namespace SarasBloggAPI.Controllers
             };
         }
 
+        private async Task<(ApplicationUser? User, string? TopRole)> ResolveBestUserByEmailAsync(string email)
+        {
+            // Get all users that share this email (handles the duplicate-email case gracefully)
+            var candidates = await _userManager.Users
+                .Where(u => u.Email != null && u.Email == email)
+                .ToListAsync();
+
+            ApplicationUser? best = null;
+            string? bestTopRole = null;
+            var bestRank = int.MaxValue;
+
+            foreach (var u in candidates)
+            {
+                var roles = await _userManager.GetRolesAsync(u);
+                var top = GetTopRole(roles) ?? "";
+                var rank = RoleRank.TryGetValue(top, out var r) ? r : 999;
+
+                if (rank < bestRank)
+                {
+                    best = u;
+                    bestTopRole = top;
+                    bestRank = rank;
+                }
+            }
+
+            return (best, bestTopRole);
+        }
+
+
+
         // ===== Endpoints =====
 
         // Alla (även utloggade) ska se färger/TopRole
@@ -86,25 +127,42 @@ namespace SarasBloggAPI.Controllers
         [HttpGet]
         public async Task<List<CommentDto>> GetAllCommentsAsync()
         {
-            var comments = await _commentManager.GetCommentsAsync();
-            var list = new List<CommentDto>(comments.Count);
-            foreach (var c in comments)
-                list.Add(await ToDtoAsync(c));
-            return list;
+            try
+            {
+                var comments = await _commentManager.GetCommentsAsync();
+                var list = new List<CommentDto>(comments.Count);
+                foreach (var c in comments)
+                    list.Add(await ToDtoAsync(c));
+                return list;
+            }
+            catch
+            {
+                return new List<CommentDto>();
+            }
         }
 
-        // Effektivt för detaljsida: hämta per blogg
         [AllowAnonymous]
         [HttpGet("by-blogg/{bloggId:int}")]
         public async Task<List<CommentDto>> GetByBloggAsync(int bloggId)
         {
-            var all = await _commentManager.GetCommentsAsync();
-            var filtered = all.Where(c => c.BloggId == bloggId).OrderBy(c => c.CreatedAt).ToList();
-            var list = new List<CommentDto>(filtered.Count);
-            foreach (var c in filtered)
-                list.Add(await ToDtoAsync(c));
-            return list;
+            try
+            {
+                var all = await _commentManager.GetCommentsAsync();
+                var filtered = all.Where(c => c.BloggId == bloggId)
+                                  .OrderBy(c => c.CreatedAt)
+                                  .ToList();
+
+                var list = new List<CommentDto>(filtered.Count);
+                foreach (var c in filtered)
+                    list.Add(await ToDtoAsync(c));
+                return list;
+            }
+            catch
+            {
+                return new List<CommentDto>();
+            }
         }
+
 
         // Hämta en kommentar
         [AllowAnonymous]
