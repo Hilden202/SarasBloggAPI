@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.EntityFrameworkCore;
 using SarasBloggAPI.Data;
 using SarasBloggAPI.DTOs;
 using SarasBloggAPI.Services;
@@ -70,14 +71,27 @@ public class AuthController : ControllerBase
         };
 
         // Unik e-post?
-        var existingByEmail = await _userManager.FindByEmailAsync(dto.Email);
-        if (existingByEmail is not null)
-            return Conflict(new BasicResultDto { Succeeded = false, Message = "Email already in use." });
+        var normEmail = _userManager.NormalizeEmail(dto.Email);
+        var emailInUse = await _userManager.Users
+            .AnyAsync(u => u.NormalizedEmail == normEmail);
+        if (emailInUse)
+            return Conflict(new BasicResultDto
+            {
+                Succeeded = false,
+                Message = "Kunde inte skapa konto. Prova en annan e-post eller logga in."
+            });
 
         // Unikt användarnamn?
-        var existingByName = await _userManager.FindByNameAsync(dto.UserName);
-        if (existingByName is not null)
-            return Conflict(new BasicResultDto { Succeeded = false, Message = "Username already in use." });
+        var normName = _userManager.NormalizeName(dto.UserName);
+        var userNameInUse = await _userManager.Users
+            .AnyAsync(u => u.NormalizedUserName == normName);
+        if (userNameInUse)
+            return Conflict(new BasicResultDto
+            {
+                Succeeded = false,
+                Message = "Användarnamnet är upptaget."
+            });
+
 
         var create = await _userManager.CreateAsync(user, dto.Password);
         if (!create.Succeeded)
