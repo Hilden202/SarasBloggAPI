@@ -10,11 +10,13 @@ namespace SarasBloggAPI.DAL
     {
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly RoleManager<IdentityRole> _roleManager;
+        private readonly MyDbContext _db;
 
-        public UserManagerService(UserManager<ApplicationUser> userManager, RoleManager<IdentityRole> roleManager)
+        public UserManagerService(UserManager<ApplicationUser> userManager, RoleManager<IdentityRole> roleManager, MyDbContext db)
         {
             _userManager = userManager;
             _roleManager = roleManager;
+            _db = db;
         }
 
         // SarasBloggAPI/DAL/UserManagerService.cs
@@ -188,6 +190,66 @@ namespace SarasBloggAPI.DAL
             return new BasicResultDto { Succeeded = true, Message = "Account deleted." };
         }
 
+        public async Task<(byte[] Bytes, string FileName, string ContentType)?> BuildPersonalDataFileAsync(string userId)
+        {
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null) return null;
 
+            var roles = await _userManager.GetRolesAsync(user);
+
+            var comments = await _db.Comments
+                .Where(c => c.UserId == userId)
+                .OrderBy(c => c.CreatedAt)
+                .Select(c => new { c.Id, c.BloggId, c.Content, c.CreatedAt })
+                .ToListAsync();
+
+            var likes = await _db.BloggLikes
+                .Where(l => l.UserId == userId)
+                .OrderBy(l => l.CreatedAt)
+                .Select(l => new { l.Id, l.BloggId, l.CreatedAt })
+                .ToListAsync();
+
+            var bloggIds = comments.Select(c => c.BloggId).Concat(likes.Select(l => l.BloggId)).Distinct().ToList();
+            var bloggTitles = await _db.Bloggs
+                .Where(b => bloggIds.Contains(b.Id))
+                .Select(b => new { b.Id, b.Title })
+                .ToDictionaryAsync(x => x.Id, x => x.Title ?? "");
+
+            var export = new
+            {
+                User = new
+                {
+                    user.Id,
+                    user.UserName,
+                    user.Email,
+                    user.Name,
+                    user.BirthYear,
+                    user.EmailConfirmed,
+                    Roles = roles
+                },
+                Comments = comments.Select(c => new
+                {
+                    c.Id,
+                    c.BloggId,
+                    BloggTitle = bloggTitles.TryGetValue(c.BloggId, out var t1) ? t1 : "",
+                    c.Content,
+                    c.CreatedAt
+                }),
+                Likes = likes.Select(l => new
+                {
+                    l.Id,
+                    l.BloggId,
+                    BloggTitle = bloggTitles.TryGetValue(l.BloggId, out var t2) ? t2 : "",
+                    l.CreatedAt
+                })
+            };
+
+            var json = System.Text.Json.JsonSerializer.Serialize(export, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+            var safeUser = (user.UserName ?? user.Email ?? "user").Replace('@', '_').Replace(':', '_');
+            var fileName = $"{safeUser}_personal_data.json";
+
+            return (bytes, fileName, "application/json");
+        }
     }
 }

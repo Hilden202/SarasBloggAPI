@@ -8,6 +8,12 @@ using Microsoft.AspNetCore.Identity;
 using SarasBloggAPI.Data;
 using System.Text;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Http.HttpResults;
+using SarasBloggAPI.Models;
+using System.Data;
+using System.Xml.Linq;
+using System.Reflection.Metadata;
 
 namespace SarasBloggAPI.Controllers
 {
@@ -18,14 +24,17 @@ namespace SarasBloggAPI.Controllers
         private readonly UserManagerService _userManagerService;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly SignInManager<ApplicationUser> _signInManager;
+        private readonly MyDbContext _db;
 
         public UserController(UserManagerService userManagerService,
                               UserManager<ApplicationUser> userManager,
-                              SignInManager<ApplicationUser> signInManager)
+                              SignInManager<ApplicationUser> signInManager,
+                              MyDbContext db)
         {
             _userManagerService = userManagerService;
             _userManager = userManager;
             _signInManager = signInManager;
+            _db = db;
         }
 
         [Authorize(Policy = "AdminOrSuperadmin")]
@@ -242,6 +251,30 @@ namespace SarasBloggAPI.Controllers
 
             var roles = await _userManager.GetRolesAsync(user);
 
+            // === Extra: hämta relaterade kommentarer & likes ===
+            // RÄTT: använd den injicerade DbContexten i kontrollern
+            var comments = await _db.Comments
+                .Where(c => c.UserId == myId)
+                .OrderBy(c => c.CreatedAt)
+                .Select(c => new { c.Id, c.BloggId, c.Content, c.CreatedAt })
+                .ToListAsync();
+
+            var likes = await _db.BloggLikes
+                .Where(l => l.UserId == myId)
+                .OrderBy(l => l.CreatedAt)
+                .Select(l => new { l.Id, l.BloggId, l.CreatedAt })
+                .ToListAsync();
+
+            var bloggIds = comments.Select(c => c.BloggId)
+                .Concat(likes.Select(l => l.BloggId))
+                .Distinct()
+                .ToList();
+
+            var bloggTitles = await _db.Bloggs
+                .Where(b => bloggIds.Contains(b.Id))
+                .Select(b => new { b.Id, b.Title })
+                .ToDictionaryAsync(x => x.Id, x => x.Title ?? "");
+
             var data = new Dictionary<string, string?>
             {
                 ["Id"] = user.Id,
@@ -259,7 +292,40 @@ namespace SarasBloggAPI.Controllers
                 .Select(c => new KeyValuePair<string, string>(c.Type, c.Value))
                 .ToList();
 
-            return Ok(new PersonalDataDto { Data = data, Roles = roles.ToList(), Claims = claims });
+            List<SarasBloggAPI.DTOs.CommentPreviewDto> commentDtos =
+                comments.Select(c => new SarasBloggAPI.DTOs.CommentPreviewDto
+                {
+                    Id = Convert.ToInt32(c.Id),
+                    BloggId = Convert.ToInt32(c.BloggId),
+                    BloggTitle = bloggTitles.TryGetValue(Convert.ToInt32(c.BloggId), out var t1) ? t1 : "",
+                    Content = c.Content,
+                    CreatedAt = c.CreatedAt
+                }).ToList();
+
+            List<SarasBloggAPI.DTOs.LikePreviewDto> likeDtos =
+                likes.Select(l => new SarasBloggAPI.DTOs.LikePreviewDto
+                {
+                    Id = Convert.ToInt32(l.Id),
+                    BloggId = Convert.ToInt32(l.BloggId),
+                    BloggTitle = bloggTitles.TryGetValue(Convert.ToInt32(l.BloggId), out var t2) ? t2 : "",
+                    CreatedAt = l.CreatedAt
+                }).ToList();
+
+
+            // Bygg svaret – sätt räknare från listorna
+            var dto = new SarasBloggAPI.DTOs.PersonalDataDto
+            {
+                Data = data,
+                Roles = roles.ToList(),
+                Claims = claims,
+                Comments = commentDtos,
+                Likes = likeDtos,
+                CommentsCount = commentDtos.Count, // property på List<T>
+                LikesCount = likeDtos.Count
+            };
+
+            return Ok(dto);
+
         }
 
         [Authorize]
@@ -267,12 +333,11 @@ namespace SarasBloggAPI.Controllers
         [HttpGet("~/api/users/me/personal-data/download")]
         public async Task<IActionResult> DownloadMyPersonalData()
         {
-            var result = await GetMyPersonalData() as OkObjectResult;
-            if (result?.Value is null) return Unauthorized();
-
-            var json = JsonSerializer.Serialize(result.Value, new JsonSerializerOptions { WriteIndented = true });
-            var bytes = Encoding.UTF8.GetBytes(json);
-            return File(bytes, "application/json", "PersonalData.json");
+            var myId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(myId)) return Unauthorized();
+            var blob = await _userManagerService.BuildPersonalDataFileAsync(myId);
+            if (blob is null) return Unauthorized();
+            return File(blob.Value.Bytes, blob.Value.ContentType, blob.Value.FileName);
         }
 
         [Authorize]
