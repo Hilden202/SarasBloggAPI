@@ -5,11 +5,13 @@ using SarasBloggAPI.Data;
 using SarasBloggAPI.DTOs;
 using SarasBloggAPI.Models;
 using SarasBloggAPI.Services;
+using Microsoft.AspNetCore.Authorization;
 
 namespace SarasBloggAPI.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize(Policy = "AdminOrSuperadmin")]
     public class BloggImageController : ControllerBase
     {
         private static readonly SemaphoreSlim _gitHubGate = new(1, 1); // serialisera writes lite försiktigt
@@ -31,6 +33,7 @@ namespace SarasBloggAPI.Controllers
             _logger = logger;
         }
 
+        [AllowAnonymous]
         [HttpGet("blogg/{bloggId}")]
         public async Task<ActionResult<IEnumerable<BloggImageDto>>> GetImagesByBloggId(int bloggId)
         {

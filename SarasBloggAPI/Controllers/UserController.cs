@@ -90,6 +90,7 @@ namespace SarasBloggAPI.Controllers
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         public async Task<IActionResult> AddRole(string id, string roleName)
         {
+            roleName = roleName?.Trim().ToLowerInvariant();
             var success = await _userManagerService.AddUserToRoleAsync(id, roleName);
             return success ? Ok() : BadRequest("❌ Kunde inte lägga till rollen.");
         }
@@ -102,6 +103,7 @@ namespace SarasBloggAPI.Controllers
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         public async Task<IActionResult> RemoveRole(string id, string roleName)
         {
+            roleName = roleName?.Trim().ToLowerInvariant();
             var user = await _userManagerService.GetUserByIdAsync(id);
             if (user?.Email?.ToLower() == "admin@sarasblogg.se")
                 return BadRequest("❌ Det går inte att ta bort roller från admin@sarasblogg.se.");

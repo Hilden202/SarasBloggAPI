@@ -1,7 +1,10 @@
-﻿public class LikeDto
+﻿namespace SarasBloggAPI.DTOs
 {
-    public int BloggId { get; set; }
-    public string UserId { get; set; } = "";
-    public int Count { get; set; }
-    public bool Liked { get; set; }
+    public class LikeDto
+    {
+        public int BloggId { get; set; }
+        public string UserId { get; set; } = "";
+        public int Count { get; set; }
+        public bool Liked { get; set; }
+    }
 }

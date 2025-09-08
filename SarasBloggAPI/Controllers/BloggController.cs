@@ -2,6 +2,7 @@
 using SarasBloggAPI.DAL;
 using SarasBloggAPI.Models;
 using System;
+using Microsoft.AspNetCore.Authorization;
 
 
 namespace SarasBloggAPI.Controllers
@@ -18,6 +19,7 @@ namespace SarasBloggAPI.Controllers
         }
 
         // GET: api/blogg
+        [AllowAnonymous]
         [HttpGet]
         public async Task<ActionResult<List<Blogg>>> GetAll()
         {
@@ -26,6 +28,7 @@ namespace SarasBloggAPI.Controllers
         }
 
         // GET: api/blogg/5
+        [AllowAnonymous]
         [HttpGet("{id}")]
         public async Task<ActionResult<Blogg>> Get(int id)
         {
@@ -37,6 +40,7 @@ namespace SarasBloggAPI.Controllers
         }
 
         // POST: api/blogg
+        [Authorize(Policy = "AdminOrSuperadmin")]
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] Blogg blogg)
         {
@@ -53,6 +57,7 @@ namespace SarasBloggAPI.Controllers
         }
 
         // PUT: api/blogg/5
+        [Authorize(Policy = "AdminOrSuperadmin")]
         [HttpPut("{id}")]
         public async Task<IActionResult> Update(int id, [FromBody] Blogg updatedBlogg)
         {
@@ -64,6 +69,7 @@ namespace SarasBloggAPI.Controllers
         }
 
         // DELETE: api/blogg/5
+        [Authorize(Policy = "AdminOrSuperadmin")]
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {

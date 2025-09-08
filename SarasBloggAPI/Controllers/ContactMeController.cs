@@ -1,11 +1,13 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using SarasBloggAPI.DAL;
 using SarasBloggAPI.Models;
+using Microsoft.AspNetCore.Authorization;
 
 namespace SarasBloggAPI.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize(Policy = "AdminOrSuperadmin")]
     public class ContactMeController : ControllerBase
     {
         private readonly ContactMeManager _manager;
@@ -22,6 +24,7 @@ namespace SarasBloggAPI.Controllers
             return Ok(contacts);
         }
 
+        [AllowAnonymous]
         [HttpPost]
         public async Task<ActionResult<ContactMe>> Create(ContactMe contact)
         {

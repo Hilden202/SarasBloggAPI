@@ -3,11 +3,13 @@ using SarasBloggAPI.DAL;
 using SarasBloggAPI.Models;
 using SarasBloggAPI.Services;
 using SarasBloggAPI.DTOs;
+using Microsoft.AspNetCore.Authorization;
 
 namespace SarasBloggAPI.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize(Policy = "AdminOrSuperadmin")]
     public class AboutMeController : ControllerBase
     {
         private readonly AboutMeManager _manager;
@@ -19,6 +21,7 @@ namespace SarasBloggAPI.Controllers
             _imgSvc = imgSvc;
         }
 
+        [AllowAnonymous]
         [HttpGet]
         public async Task<ActionResult<AboutMe?>> GetAboutMe()
         {
@@ -51,6 +54,7 @@ namespace SarasBloggAPI.Controllers
 
         // ---- Bildendpoints ----
 
+        [AllowAnonymous]
         [HttpGet("image")]
         public async Task<ActionResult<AboutMeImageDto>> GetImage()
         {

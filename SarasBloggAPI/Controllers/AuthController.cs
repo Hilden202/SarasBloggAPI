@@ -57,7 +57,7 @@ public class AuthController : ControllerBase
 
         if (string.IsNullOrWhiteSpace(dto.Password))
             return BadRequest(new BasicResultDto { Succeeded = false, Message = "Password is required" });
-        
+
         if (dto.BirthYear is < 1900 or > 2100)
             dto.BirthYear = null;
 
@@ -100,9 +100,9 @@ public class AuthController : ControllerBase
             return BadRequest(new BasicResultDto { Succeeded = false, Message = msg });
         }
 
-        if (!await _userManager.IsInRoleAsync(user, "User"))
+        if (!await _userManager.IsInRoleAsync(user, "user"))
         {
-            await _userManager.AddToRoleAsync(user, "User");
+            await _userManager.AddToRoleAsync(user, "user");
         }
 
         var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);

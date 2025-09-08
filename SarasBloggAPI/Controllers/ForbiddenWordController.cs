@@ -1,11 +1,13 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using SarasBloggAPI.DAL;
 using SarasBloggAPI.Models;
+using Microsoft.AspNetCore.Authorization;
 
 namespace SarasBloggAPI.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize(Policy = "CanModerateComments")]
     public class ForbiddenWordController : ControllerBase
     {
         private readonly ForbiddenWordManager _manager;
