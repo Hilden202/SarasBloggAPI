@@ -29,11 +29,38 @@ namespace SarasBloggAPI.Data
         {
             base.OnModelCreating(b);
 
+            // Unik: en like per (Blogg, User)
             b.Entity<BloggLike>()
              .HasIndex(x => new { x.BloggId, x.UserId })
              .IsUnique();
+
+            // === Cascade: User -> BloggLike ===
+            b.Entity<BloggLike>()
+             .HasOne<ApplicationUser>()      // ägare: användaren
+             .WithMany()
+             .HasForeignKey(x => x.UserId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            // === Cascade: Blogg -> BloggLike ===
+            b.Entity<BloggLike>()
+             .HasOne<Blogg>()                // ägare: blogginlägget
+             .WithMany()
+             .HasForeignKey(x => x.BloggId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            // === Cascade: User -> Comment ===
+            b.Entity<Comment>()
+             .HasOne<ApplicationUser>()
+             .WithMany()
+             .HasForeignKey(c => c.UserId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            // === Cascade: Blogg -> Comment ===
+            b.Entity<Comment>()
+             .HasOne<Blogg>()
+             .WithMany()
+             .HasForeignKey(c => c.BloggId)
+             .OnDelete(DeleteBehavior.Cascade);
         }
-
-
     }
 }

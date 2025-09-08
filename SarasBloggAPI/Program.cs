@@ -339,6 +339,8 @@ namespace SarasBloggAPI
             // 🔹 Root endpoint
             app.MapGet("/", () => Results.Ok("SarasBloggAPI is running"));
 
+            await SarasBloggAPI.Data.StartupSeeder.CreateAdminUserAsync(app);
+
             app.Run();
         }
     }

@@ -12,6 +12,9 @@ namespace SarasBloggAPI.Models
         public DateTime CreatedAt { get; set; }
         public int BloggId { get; set; }
 
+        // NYTT: koppling till inloggad användare
+        public string? UserId { get; set; }
+
         public Comment()
         {
             Name = string.Empty;

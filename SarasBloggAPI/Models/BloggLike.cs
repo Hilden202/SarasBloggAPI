@@ -1,8 +1,12 @@
-﻿// Data/Entities/BloggLike.cs
-public class BloggLike
+﻿using System;
+
+namespace SarasBloggAPI.Models
 {
-    public int Id { get; set; }
-    public int BloggId { get; set; }
-    public string UserId { get; set; } = "";   // tillfälligt: username eller email
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public class BloggLike
+    {
+        public int Id { get; set; }
+        public int BloggId { get; set; }
+        public string UserId { get; set; } = "";
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    }
 }

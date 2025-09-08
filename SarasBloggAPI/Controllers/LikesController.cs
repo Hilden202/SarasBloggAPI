@@ -6,6 +6,7 @@ using System.Linq;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
 using SarasBloggAPI.DTOs;
+using SarasBloggAPI.Models;
 
 [ApiController]
 [Route("api/[controller]")]

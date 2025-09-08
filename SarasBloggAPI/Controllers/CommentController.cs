@@ -193,6 +193,9 @@ namespace SarasBloggAPI.Controllers
                 var myId = User.FindFirstValue(ClaimTypes.NameIdentifier);
                 if (!string.IsNullOrWhiteSpace(myId))
                 {
+                    // NYTT: koppla UserId (för cascade delete)
+                    comment.UserId = myId;
+
                     var me = await _userManager.FindByIdAsync(myId);
                     if (me != null)
                     {
@@ -203,6 +206,7 @@ namespace SarasBloggAPI.Controllers
                 else
                 {
                     // Anonym: se till att Email INTE råkar bli kvar från tidigare request
+                    comment.UserId = null;  // viktigt: lämna null för anonyma
                     comment.Email = null;
                 }
 
@@ -230,8 +234,22 @@ namespace SarasBloggAPI.Controllers
             if (string.IsNullOrWhiteSpace(myId)) return Forbid();
 
             var me = await _userManager.FindByIdAsync(myId);
-            var isOwner = !string.IsNullOrWhiteSpace(existing.Email) &&
-                          string.Equals(existing.Email, me?.Email, StringComparison.OrdinalIgnoreCase);
+            var isOwner = false;
+
+            // Primärt: jämför UserId (nya kommentarer)
+            if (!string.IsNullOrWhiteSpace(existing.UserId) &&
+                string.Equals(existing.UserId, me?.Id, StringComparison.Ordinal))
+            {
+                isOwner = true;
+            }
+
+            // Fallback: gammal modell som bara använde Email
+            if (!isOwner && !string.IsNullOrWhiteSpace(existing.Email) &&
+                string.Equals(existing.Email, me?.Email, StringComparison.OrdinalIgnoreCase))
+            {
+                isOwner = true;
+            }
+
 
             if (isOwner)
             {
