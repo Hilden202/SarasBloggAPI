@@ -9,7 +9,7 @@ namespace SarasBloggAPI.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Policy = "AdminOrSuperadmin")]
+    [Authorize(Policy = "AdminOrSuperadmin")] // standardkrav
     public class AboutMeController : ControllerBase
     {
         private readonly AboutMeManager _manager;
@@ -37,15 +37,23 @@ namespace SarasBloggAPI.Controllers
             return CreatedAtAction(nameof(GetAboutMe), new { id = created.Id }, created);
         }
 
-        [HttpPut("{id}")]
+        [HttpPut("{id:int}")]
         public async Task<IActionResult> UpdateAboutMe(int id, [FromBody] AboutMe aboutMe)
         {
-            if (id != aboutMe.Id) return BadRequest("Id mismatch");
-            var success = await _manager.UpdateAsync(aboutMe);
-            return success ? NoContent() : NotFound();
+            if (aboutMe == null)
+                return BadRequest("Ingen data skickades.");
+
+            // säkerställ att route-id gäller
+            aboutMe.Id = id;
+
+            var updated = await _manager.UpdateAsync(aboutMe);
+            if (!updated)
+                return NotFound($"Ingen AboutMe med Id={id} hittades.");
+
+            return NoContent();
         }
 
-        [HttpDelete("{id}")]
+        [HttpDelete("{id:int}")]
         public async Task<IActionResult> DeleteAboutMe(int id)
         {
             var success = await _manager.DeleteAsync(id);
