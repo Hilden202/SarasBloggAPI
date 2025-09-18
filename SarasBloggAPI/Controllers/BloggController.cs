@@ -68,6 +68,29 @@ namespace SarasBloggAPI.Controllers
             return result ? NoContent() : NotFound();
         }
 
+        [Authorize(Policy = "AdminOrSuperadmin")]
+        [HttpPatch("{id}/hidden")]
+        public async Task<IActionResult> ToggleHidden(int id)
+        {
+            var b = await _BloggManager.GetByIdAsync(id);
+            if (b == null) return NotFound();
+            b.Hidden = !b.Hidden;
+            var ok = await _BloggManager.UpdateAsync(b);
+            return ok ? Ok(new { b.Hidden }) : StatusCode(500, "Update failed");
+        }
+
+        [Authorize(Policy = "AdminOrSuperadmin")]
+        [HttpPatch("{id}/archived")]
+        public async Task<IActionResult> ToggleArchived(int id)
+        {
+            var b = await _BloggManager.GetByIdAsync(id);
+            if (b == null) return NotFound();
+            b.IsArchived = !b.IsArchived;
+            var ok = await _BloggManager.UpdateAsync(b);
+            return ok ? Ok(new { b.IsArchived }) : StatusCode(500, "Update failed");
+        }
+
+
         // DELETE: api/blogg/5
         [Authorize(Policy = "AdminOrSuperadmin")]
         [HttpDelete("{id}")]
