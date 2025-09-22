@@ -24,6 +24,7 @@ namespace SarasBloggAPI
         public static async Task Main(string[] args)   // 🔹 async för att kunna vänta in DB
         {
             var builder = WebApplication.CreateBuilder(args);
+            var isLocalTest = builder.Environment.IsEnvironment("Test");
 
             // ---- CORS origins: stöd både Array-sektion och CSV-sträng ----
             string[] originsFromArray = builder.Configuration
@@ -68,9 +69,17 @@ namespace SarasBloggAPI
                 });
             });
 
-            // Render/containers: bind PORT från env
-            var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
-            builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+            // Render/containers: bind PORT från env (endast i Production)
+            if (builder.Environment.IsProduction())
+            {
+                var port = Environment.GetEnvironmentVariable("PORT");
+                if (!string.IsNullOrEmpty(port))
+                {
+                    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+                }
+            }
+            // I Dev/Test låter vi Kestrel/launchSettings styra (t.ex. https://localhost:5003)
+
 
             // Hämta connection string (stöder både DefaultConnection och MyConnection)
             var rawConnectionString =
@@ -86,6 +95,7 @@ namespace SarasBloggAPI
                 {
                     var uri = new Uri(cs);
                     var userInfo = uri.UserInfo.Split(':');
+                    // postgres://-grenen
                     var b = new NpgsqlConnectionStringBuilder
                     {
                         Host = uri.Host,
@@ -93,7 +103,9 @@ namespace SarasBloggAPI
                         Database = uri.AbsolutePath.Trim('/'),
                         Username = userInfo[0],
                         Password = userInfo.Length > 1 ? userInfo[1] : "",
-                        SslMode = SslMode.Require,
+                        SslMode = (isLocalTest || uri.Host is "localhost" or "127.0.0.1")
+                                    ? SslMode.Disable
+                                    : SslMode.Require,
                         TrustServerCertificate = true,
                         Pooling = true,
                         MinPoolSize = 0,
@@ -103,19 +115,24 @@ namespace SarasBloggAPI
                         CommandTimeout = 30
                     };
                     return b.ToString();
+
                 }
 
-                var nb = new NpgsqlConnectionStringBuilder(cs)
-                {
-                    SslMode = SslMode.Require,
-                    TrustServerCertificate = true,
-                    Pooling = true,
-                    MinPoolSize = 0,
-                    MaxPoolSize = 20,
-                    KeepAlive = 60,
-                    Timeout = 15,
-                    CommandTimeout = 30
-                };
+                // --- "vanlig" connection string-gren (FIXEN) ---
+                var nb = new NpgsqlConnectionStringBuilder(cs);
+
+                // sätt egenskaper efter att nb finns
+                nb.SslMode = (isLocalTest || nb.Host is "localhost" or "127.0.0.1")
+                                ? SslMode.Disable
+                                : SslMode.Require;
+                nb.TrustServerCertificate = true;
+                nb.Pooling = true;
+                nb.MinPoolSize = 0;
+                nb.MaxPoolSize = 20;
+                nb.KeepAlive = 60;
+                nb.Timeout = 15;
+                nb.CommandTimeout = 30;
+
                 return nb.ToString();
             }
 
@@ -252,30 +269,30 @@ namespace SarasBloggAPI
             var app = builder.Build();
 
             // MELLANVAROR & PIPELINE
-            if (app.Environment.IsDevelopment())
+            var swaggerEnabled = builder.Configuration.GetValue<bool>("Swagger:Enabled");
+
+            if (app.Environment.IsDevelopment() ||
+                app.Environment.IsEnvironment("Test") ||
+                (app.Environment.IsProduction() && swaggerEnabled))
             {
                 app.UseSwagger();
                 app.UseSwaggerUI();
 
-                // HTTPS-redirect bara i dev (valfritt)
-                app.UseHttpsRedirection();
+                // HTTPS-redirect bara utanför riktig prod
+                if (!app.Environment.IsProduction())
+                    app.UseHttpsRedirection();
             }
             else
             {
-                // Viktigt bakom proxy (Render)
+                // Prod bakom proxy (Render)
                 var fwd = new ForwardedHeadersOptions
                 {
                     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
                 };
-                // Tillåt vilken proxy som helst (Render roterar IP:er)
                 fwd.KnownNetworks.Clear();
                 fwd.KnownProxies.Clear();
                 fwd.ForwardLimit = null;
-
-                // VIKTIGT: lägg detta TIDIGT i pipeline, innan auth/cors/etc.
                 app.UseForwardedHeaders(fwd);
-
-                // Ingen app.UseHttpsRedirection() i prod på Render
             }
 
             app.UseCors("SarasPolicy");
@@ -340,7 +357,10 @@ namespace SarasBloggAPI
             // 🔹 Root endpoint
             app.MapGet("/", () => Results.Ok("SarasBloggAPI is running"));
 
-            await SarasBloggAPI.Data.StartupSeeder.CreateAdminUserAsync(app);
+            if (!app.Environment.IsProduction())
+            {
+                await StartupSeeder.CreateAdminUserAsync(app);
+            }
 
             app.Run();
         }
