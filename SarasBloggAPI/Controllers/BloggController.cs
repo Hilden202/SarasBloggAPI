@@ -3,6 +3,7 @@ using SarasBloggAPI.DAL;
 using SarasBloggAPI.Models;
 using System;
 using Microsoft.AspNetCore.Authorization;
+using SarasBloggAPI.Services;
 
 
 namespace SarasBloggAPI.Controllers
@@ -12,10 +13,12 @@ namespace SarasBloggAPI.Controllers
     public class BloggController : ControllerBase
     {
         private readonly BloggManager _BloggManager;
+        private readonly NewPostNotifier _notifier;
 
-        public BloggController(BloggManager bloggManager)
+        public BloggController(BloggManager bloggManager, NewPostNotifier notifier)
         {
             _BloggManager = bloggManager;
+            _notifier = notifier;
         }
 
         // GET: api/blogg
@@ -47,6 +50,11 @@ namespace SarasBloggAPI.Controllers
             try
             {
                 var created = await _BloggManager.CreateAsync(blogg);
+                // Skicka mejl om inlägget är publikt direkt
+                if (!created.Hidden && !created.IsArchived)
+                {
+                    _ = _notifier.NotifyAsync(created.Id);
+                }
                 return CreatedAtAction(nameof(Get), new { id = created.Id }, created);
             }
             catch (Exception ex)
