@@ -47,13 +47,14 @@ namespace SarasBloggAPI.Services
             }
 
             var frontendBase = _cfg["Frontend:BaseUrl"] ?? "https://sarasblogg.onrender.com";
-            var postUrl = $"{frontendBase}/Blogg/Details/{post.Id}";
+             // Frontend visar ett inlägg via querystring: /Blogg?showId={id}
+            var postUrl = $"{frontendBase.TrimEnd('/')}/Blogg?showId={post.Id}";
 
             var subject = $"Nytt inlägg: {post.Title}";
             var html = $@"<p>Hej!</p>
-<p>Ett nytt blogginlägg har publicerats: <strong>{System.Net.WebUtility.HtmlEncode(post.Title)}</strong></p>
-<p><a href=""{postUrl}"">Läs inlägget</a></p>
-<p>/SarasBlogg</p>";
+                        <p>Ett nytt blogginlägg har publicerats: <strong>{System.Net.WebUtility.HtmlEncode(post.Title)}</strong></p>
+                        <p><a href=""{postUrl}"">Läs inlägget</a></p>
+                        <p>/SarasBlogg</p>";
 
             var recipients = await _userManager.Users
                 .Where(u => u.EmailConfirmed && u.NotifyOnNewPost && u.Email != null)
