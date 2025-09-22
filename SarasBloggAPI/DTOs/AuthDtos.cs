@@ -18,7 +18,8 @@
         int? BirthYear,
         bool EmailConfirmed,
         string? PhoneNumber,
-        IEnumerable<string> Roles
+        IEnumerable<string> Roles,
+        bool NotifyOnNewPost
     );
 
     // ---- REGISTER ----
@@ -29,6 +30,7 @@
         public string Password { get; set; } = "";
         public string? Name { get; set; }
         public int? BirthYear { get; set; }
+        public bool SubscribeNewPosts { get; set; }
     }
 
 

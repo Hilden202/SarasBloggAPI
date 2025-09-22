@@ -7,5 +7,6 @@ namespace SarasBloggAPI.Data
         public int? BirthYear { get; set; }
         public string? Name { get; set; }
         public string? ProfileImageUrl { get; set; }
+        public bool NotifyOnNewPost { get; set; } = false;
     }
 }

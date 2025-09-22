@@ -70,6 +70,8 @@ public class AuthController : ControllerBase
             BirthYear = dto.BirthYear
         };
 
+        user.NotifyOnNewPost = dto.SubscribeNewPosts;
+
         // Unik e-post?
         var normEmail = _userManager.NormalizeEmail(dto.Email);
         var emailInUse = await _userManager.Users
@@ -214,10 +216,12 @@ public class AuthController : ControllerBase
             Email: user.Email,
             Name: user.Name,
             BirthYear: user.BirthYear,
-            EmailConfirmed: user.EmailConfirmed,
             PhoneNumber: phone,
-            Roles: roles
+            EmailConfirmed: user.EmailConfirmed,
+            Roles: roles,
+            NotifyOnNewPost: user.NotifyOnNewPost
         );
+
     }
 
 

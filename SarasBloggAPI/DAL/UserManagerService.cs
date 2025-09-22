@@ -34,7 +34,8 @@ namespace SarasBloggAPI.DAL
                     Name = u.Name,
                     BirthYear = u.BirthYear,
                     EmailConfirmed = u.EmailConfirmed,
-                    Roles = (await _userManager.GetRolesAsync(u)).ToList()
+                    Roles = (await _userManager.GetRolesAsync(u)).ToList(),
+                    NotifyOnNewPost = u.NotifyOnNewPost,
                 });
             }
             return list;
@@ -53,7 +54,8 @@ namespace SarasBloggAPI.DAL
                 Name = u.Name,
                 BirthYear = u.BirthYear,
                 EmailConfirmed = u.EmailConfirmed,
-                Roles = roles.ToList()
+                Roles = roles.ToList(),
+                NotifyOnNewPost = u.NotifyOnNewPost
             };
         }
 

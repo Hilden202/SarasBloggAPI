@@ -9,6 +9,7 @@
         public int? BirthYear { get; set; }
         public bool EmailConfirmed { get; set; }
         public IList<string> Roles { get; set; } = new List<string>();
+        public bool NotifyOnNewPost { get; set; }
     }
 
 }

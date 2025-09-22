@@ -170,6 +170,7 @@ namespace SarasBloggAPI
             builder.Services.AddScoped<IAboutMeImageService, AboutMeImageService>();
             builder.Services.AddScoped<ContactMeManager>();
             builder.Services.AddScoped<UserManagerService>();
+            builder.Services.AddScoped<NewPostNotifier>();
 
             // E-POST
             var emailMode = builder.Configuration["Email:Mode"] ?? "Dev";

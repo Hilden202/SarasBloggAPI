@@ -218,6 +218,12 @@ namespace SarasBloggAPI.Controllers
                 changed = true;
             }
 
+            if (dto.NotifyOnNewPost.HasValue && dto.NotifyOnNewPost.Value != user.NotifyOnNewPost)
+            {
+                user.NotifyOnNewPost = dto.NotifyOnNewPost.Value;
+                changed = true;
+            }
+
             if (changed)
             {
                 var upd = await _userManager.UpdateAsync(user);
@@ -285,7 +291,8 @@ namespace SarasBloggAPI.Controllers
                 ["BirthYear"] = user.BirthYear?.ToString(),
                 ["TwoFactorEnabled"] = user.TwoFactorEnabled.ToString(),
                 ["LockoutEnd"] = user.LockoutEnd?.UtcDateTime.ToString("O"),
-                ["AccessFailedCount"] = user.AccessFailedCount.ToString()
+                ["AccessFailedCount"] = user.AccessFailedCount.ToString(),
+                ["NotifyOnNewPost"] = user.NotifyOnNewPost.ToString()
             };
 
             var claims = User.Claims
