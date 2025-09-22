@@ -32,6 +32,7 @@ namespace SarasBloggAPI.Services
 
         public async Task NotifyAsync(int bloggId, CancellationToken ct = default)
         {
+            _log.LogInformation("[Notify] NotifyAsync called for post {Id}", bloggId);
             var post = await _db.Bloggs.AsNoTracking()
                 .FirstOrDefaultAsync(b => b.Id == bloggId, ct);
 
@@ -60,6 +61,8 @@ namespace SarasBloggAPI.Services
                 .Where(u => u.EmailConfirmed && u.NotifyOnNewPost && u.Email != null)
                 .Select(u => u.Email!)
                 .ToListAsync(ct);
+
+            _log.LogInformation("[Notify] recipients={Count}", recipients.Count);
 
             foreach (var email in recipients)
             {
