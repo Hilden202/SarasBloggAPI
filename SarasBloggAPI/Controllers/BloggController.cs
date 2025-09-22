@@ -55,7 +55,7 @@ namespace SarasBloggAPI.Controllers
                 if (!created.Hidden && !created.IsArchived)
                 {
                     Console.WriteLine($"[Notify] Trigger (Create) for post {created.Id}");
-                    _ = _notifier.NotifyAsync(created.Id);
+                    await _notifier.NotifyAsync(created.Id);
                 }
                 return CreatedAtAction(nameof(Get), new { id = created.Id }, created);
             }
