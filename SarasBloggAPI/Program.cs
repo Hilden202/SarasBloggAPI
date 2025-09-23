@@ -136,6 +136,8 @@ namespace SarasBloggAPI
                 return nb.ToString();
             }
 
+            Console.WriteLine($"[DB] rawConnectionString = {rawConnectionString}");
+
             var npgsqlCs = BuildNpgsqlCs(rawConnectionString);
 
             // ---- DataProtection: smart conn-str val + fallback ----
