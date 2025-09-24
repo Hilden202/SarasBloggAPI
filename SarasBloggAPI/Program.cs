@@ -91,15 +91,17 @@ namespace SarasBloggAPI
             // 🔹 Bygg Npgsql-connectionstring med SSL/Trust (stöd för postgres:// och Npgsql-format)
             string BuildNpgsqlCs(string cs)
             {
-                if (!string.IsNullOrWhiteSpace(cs) && cs.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase))
+                if (!string.IsNullOrWhiteSpace(cs) &&
+                    (cs.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
+                    cs.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase)))
                 {
-                    var uri = new Uri(cs);
+                    var uri = new Uri(cs.Replace("postgres://", "postgresql://", StringComparison.OrdinalIgnoreCase));
                     var userInfo = uri.UserInfo.Split(':');
                     // postgres://-grenen
                     var b = new NpgsqlConnectionStringBuilder
                     {
                         Host = uri.Host,
-                        Port = uri.Port,
+                        Port = uri.Port > 0 ? uri.Port : 5432,
                         Database = uri.AbsolutePath.Trim('/'),
                         Username = userInfo[0],
                         Password = userInfo.Length > 1 ? userInfo[1] : "",
@@ -114,6 +116,12 @@ namespace SarasBloggAPI
                         Timeout = 15,
                         CommandTimeout = 30
                     };
+
+                    // SSL: disable för internal-host, annars require
+                    var isInternal = b.Host.Contains("-internal", StringComparison.OrdinalIgnoreCase)
+                                     || b.Host.EndsWith(".internal", StringComparison.OrdinalIgnoreCase);
+                    b.SslMode = isInternal ? Npgsql.SslMode.Disable : Npgsql.SslMode.Require;
+
                     return b.ToString();
 
                 }
