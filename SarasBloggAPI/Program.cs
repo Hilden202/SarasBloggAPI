@@ -303,41 +303,49 @@ namespace SarasBloggAPI
 
             app.UseAuthorization();
 
-            // 🔹 Vänta in DB & kör migreringar med exponentiell backoff (kallstart-safe)
-            using (var scope = app.Services.CreateScope())
+            // 🔹 Vänta in DB & ev. kör migreringar (kan stängas av via env)
+            if (!bool.TryParse(Environment.GetEnvironmentVariable("DISABLE_MIGRATIONS"), out var disableMigrations) || !disableMigrations)
             {
-                var db = scope.ServiceProvider.GetRequiredService<MyDbContext>();
-                var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-
-                var maxAttempts = 8;
-                var delay = TimeSpan.FromSeconds(1);
-
-                for (int attempt = 1; attempt <= maxAttempts; attempt++)
+                using (var scope = app.Services.CreateScope())
                 {
-                    try
-                    {
-                        await db.Database.OpenConnectionAsync();
-                        await db.Database.ExecuteSqlRawAsync("SELECT 1");
-                        await db.Database.CloseConnectionAsync();
+                    var db = scope.ServiceProvider.GetRequiredService<MyDbContext>();
+                    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
-                        await db.Database.MigrateAsync();
-                        logger.LogInformation("Database connection OK, migrations applied.");
-                        break;
-                    }
-                    catch (Exception ex) when (
-                        ex is NpgsqlException ||
-                        ex is SocketException ||
-                        ex is TimeoutException ||
-                        ex.InnerException is NpgsqlException
-                    )
+                    var maxAttempts = 8;
+                    var delay = TimeSpan.FromSeconds(1);
+
+                    for (int attempt = 1; attempt <= maxAttempts; attempt++)
                     {
-                        logger.LogWarning(ex, "DB not ready (attempt {Attempt}/{Max}). Waiting {Delay}...", attempt, maxAttempts, delay);
-                        if (attempt == maxAttempts) throw;
-                        await Task.Delay(delay);
-                        delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 15));
+                        try
+                        {
+                            await db.Database.OpenConnectionAsync();
+                            await db.Database.ExecuteSqlRawAsync("SELECT 1");
+                            await db.Database.CloseConnectionAsync();
+
+                            await db.Database.MigrateAsync();
+                            logger.LogInformation("Database connection OK, migrations applied.");
+                            break;
+                        }
+                        catch (Exception ex) when (
+                            ex is Npgsql.NpgsqlException ||
+                            ex is System.Net.Sockets.SocketException ||
+                            ex is TimeoutException ||
+                            ex.InnerException is Npgsql.NpgsqlException
+                        )
+                        {
+                            logger.LogWarning(ex, "DB not ready (attempt {Attempt}/{Max}). Waiting {Delay}...", attempt, maxAttempts, delay);
+                            if (attempt == maxAttempts) throw;
+                            await Task.Delay(delay);
+                            delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 15));
+                        }
                     }
                 }
             }
+            else
+            {
+                Console.WriteLine("⚠️ Skipping EF migrations (DISABLE_MIGRATIONS=true)");
+            }
+
 
             app.MapControllers();
 
