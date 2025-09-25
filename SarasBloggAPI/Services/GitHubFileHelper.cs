@@ -12,6 +12,8 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using System.Linq;
+using SarasBloggAPI.Models;
 
 namespace SarasBloggAPI.Services
 {
@@ -30,7 +32,7 @@ namespace SarasBloggAPI.Services
         private readonly string _branch;
         private readonly string _token;
         private readonly string _rootFolder = "uploads";
-
+        private readonly string? _mediaEnv; // "test" | "prod" | null (ingen extra nivå)
 
         public GitHubFileHelper(HttpClient http, IConfiguration cfg, ILogger<GitHubFileHelper>? logger = null)
         {
@@ -53,33 +55,35 @@ namespace SarasBloggAPI.Services
             _http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
             _http.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
 
-            // (valfritt) om du vill kunna byta "uploads"-roten via config:
+            // (valfritt) konfigurerbar uploads-rot:
             _rootFolder = cfg["GitHub:UploadFolder"] ?? cfg["GitHubUpload:UploadFolder"] ?? "uploads";
-        }
 
+            // Miljösegment för att separera media mellan test/prod (ex: "test" i Development, "prod" i appsettings.json)
+            _mediaEnv = cfg["GitHub:MediaEnv"]; // null/tom => inget extra segment
+        }
 
         // --- IFileHelper ---
 
-        // Bakåt-compat (utan bloggId): lägg i uploads/{folderName}/
+        // Bakåt-compat (utan bloggId): lägg i uploads/{env?}/{folderName}/
         public async Task<string?> SaveImageAsync(IFormFile file, string folderName)
         {
             if (file == null) throw new ArgumentNullException(nameof(file));
 
             var ext = SafeExtension(file.FileName);
             var fileName = $"{Guid.NewGuid():N}{ext}";
-            var repoPath = string.Join('/', _rootFolder, folderName ?? "misc", fileName);
+            var repoPath = JoinPath(_rootFolder, _mediaEnv, folderName ?? "misc", fileName);
 
             return await PutFileToGitHubAsync(file, repoPath);
         }
 
-        // Primär: i uploads/{folderName}/{bloggId}/
+        // Primär: uploads/{env?}/{folderName}/{bloggId}/
         public async Task<string?> SaveImageAsync(IFormFile file, int bloggId, string folderName = "blogg")
         {
             if (file == null) throw new ArgumentNullException(nameof(file));
 
             var ext = SafeExtension(file.FileName);
             var fileName = $"{Guid.NewGuid():N}{ext}";
-            var repoPath = string.Join('/', _rootFolder, folderName ?? "blogg", bloggId.ToString(), fileName);
+            var repoPath = JoinPath(_rootFolder, _mediaEnv, folderName ?? "blogg", bloggId.ToString(), fileName);
 
             return await PutFileToGitHubAsync(file, repoPath);
         }
@@ -115,11 +119,11 @@ namespace SarasBloggAPI.Services
             resp.EnsureSuccessStatusCode();
         }
 
-
         public async Task DeleteBlogFolderAsync(int bloggId, string folderName = "blogg")
         {
-            var repoPath = string.Join('/', _rootFolder, folderName ?? "blogg", bloggId.ToString());
-            await DeleteFolderRecursiveAsync(repoPath);
+            // Endast nuvarande env-sökväg
+            var current = JoinPath(_rootFolder, _mediaEnv, folderName ?? "blogg", bloggId.ToString());
+            await DeleteFolderRecursiveAsync(current);
         }
 
         // --- Upload helper ---
@@ -216,7 +220,6 @@ namespace SarasBloggAPI.Services
         {
             var ext = Path.GetExtension(fileName);
             if (string.IsNullOrWhiteSpace(ext)) return ".bin";
-            // sanera extremfall (t.ex. .heic -> behåll men du kan mappa om här om du vill)
             return ext;
         }
 
@@ -363,5 +366,9 @@ namespace SarasBloggAPI.Services
 
             return clone;
         }
+
+        // Bygg en path där tomma/null-delar filtreras bort
+        private static string JoinPath(params string?[] parts)
+            => string.Join('/', parts.Where(p => !string.IsNullOrWhiteSpace(p)));
     }
 }
