@@ -17,15 +17,18 @@ namespace SarasBloggAPI.Controllers
         private readonly CommentManager _commentManager;
         private readonly ContentSafetyService _contentSafetyService;
         private readonly UserManager<ApplicationUser> _userManager;
+        private readonly MyDbContext _db;
 
         public CommentController(
             CommentManager commentManager,
             ContentSafetyService contentSafetyService,
-            UserManager<ApplicationUser> userManager)
+            UserManager<ApplicationUser> userManager,
+            MyDbContext db)
         {
             _commentManager = commentManager;
             _contentSafetyService = contentSafetyService;
             _userManager = userManager;
+            _db = db;
         }
 
         // ===== Helpers =====
@@ -40,22 +43,6 @@ namespace SarasBloggAPI.Controllers
 
         private static string? GetTopRole(IList<string> roles)
             => roles?.OrderBy(r => RoleRank.TryGetValue(r ?? "", out var i) ? i : 999).FirstOrDefault();
-
-        private async Task<string?> ResolveTopRoleByEmailAsync(string? email)
-        {
-            if (string.IsNullOrWhiteSpace(email)) return null;
-            var user = await _userManager.FindByEmailAsync(email);
-            if (user == null) return null;
-            var roles = await _userManager.GetRolesAsync(user);
-            return GetTopRole(roles);
-        }
-
-        private async Task<string?> ResolveCurrentUserNameByEmailAsync(string? email)
-        {
-            if (string.IsNullOrWhiteSpace(email)) return null;
-            var user = await _userManager.FindByEmailAsync(email);
-            return user?.UserName;
-        }
 
         private async Task<CommentDto> ToDtoAsync(Models.Comment c)
         {
@@ -118,6 +105,12 @@ namespace SarasBloggAPI.Controllers
             return (best, bestTopRole);
         }
 
+        private async Task<List<string>> GetForbiddenWordsAsync()
+        {
+            return await _db.ForbiddenWords
+                .Select(f => f.WordPattern)
+                .ToListAsync();
+        }
 
 
         // ===== Endpoints =====
@@ -133,6 +126,13 @@ namespace SarasBloggAPI.Controllers
                 var list = new List<CommentDto>(comments.Count);
                 foreach (var c in comments)
                     list.Add(await ToDtoAsync(c));
+                // Censurera här innan return
+                var forbidden = await GetForbiddenWordsAsync();
+                foreach (var dto in list)
+                {
+                    dto.Content = TextCensorshipHelper.CensorForbiddenPatterns(dto.Content, forbidden);
+                    dto.Name = TextCensorshipHelper.CensorForbiddenPatterns(dto.Name, forbidden);
+                }
                 return list;
             }
             catch
@@ -155,6 +155,14 @@ namespace SarasBloggAPI.Controllers
                 var list = new List<CommentDto>(filtered.Count);
                 foreach (var c in filtered)
                     list.Add(await ToDtoAsync(c));
+
+                // Censurerar även här innan return (samma som i GetAll & GetComment)
+                var forbidden = await GetForbiddenWordsAsync();
+                foreach (var dto in list)
+                {
+                    dto.Content = TextCensorshipHelper.CensorForbiddenPatterns(dto.Content, forbidden);
+                    dto.Name = TextCensorshipHelper.CensorForbiddenPatterns(dto.Name, forbidden);
+                }
                 return list;
             }
             catch
@@ -171,7 +179,11 @@ namespace SarasBloggAPI.Controllers
         {
             var c = await _commentManager.GetCommentAsync(id);
             if (c == null) return NotFound();
-            return await ToDtoAsync(c);
+            var dto = await ToDtoAsync(c);
+            var forbidden = await GetForbiddenWordsAsync();
+            dto.Content = TextCensorshipHelper.CensorForbiddenPatterns(dto.Content, forbidden);
+            dto.Name = TextCensorshipHelper.CensorForbiddenPatterns(dto.Name, forbidden);
+            return dto;
         }
 
         // Skapa kommentar: tillåt anonym OCH inloggad
