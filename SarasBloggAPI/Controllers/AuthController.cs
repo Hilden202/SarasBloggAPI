@@ -326,16 +326,43 @@ public class AuthController : ControllerBase
         <p>Om du inte begärt detta kan du ignorera mejlet.</p>
         <p>Hälsningar,<br/>SarasBlogg</p>";
 
-        await _emailSender.SendAsync(user.Email!, subject, html);
+        var mode = _cfg["Email:Mode"] ?? "Dev";
+        var exposeFallbackLink = _cfg.GetValue("Auth:ExposeConfirmLinkInResponse", true);
 
-        var expose = _cfg.GetValue("Auth:ExposeConfirmLinkInResponse", true);
-
-        return Ok(new BasicResultDto
+        if (!mode.Equals("Prod", StringComparison.OrdinalIgnoreCase))
         {
-            Succeeded = true,
-            Message = expose ? "Reset link generated (dev)." : neutralMsg,
-            ConfirmEmailUrl = expose ? resetUrl : null
-        });
+            _logger.LogInformation("ForgotPassword: dev/test mode, exposing reset link");
+            return Ok(new BasicResultDto
+            {
+                Succeeded = true,
+                Message = "Reset link generated (dev/test).",
+                ConfirmEmailUrl = resetUrl
+            });
+        }
+
+        try
+        {
+            await _emailSender.SendAsync(user.Email!, subject, html);
+            _logger.LogInformation("ForgotPassword: email queued to {Email}", user.Email);
+
+            return Ok(new BasicResultDto
+            {
+                Succeeded = true,
+                Message = neutralMsg
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "ForgotPassword: email send failed to {Email}", user.Email);
+
+            var expose = exposeFallbackLink;
+            return Ok(new BasicResultDto
+            {
+                Succeeded = true,
+                Message = expose ? "Reset link generated (fallback)." : neutralMsg,
+                ConfirmEmailUrl = expose ? resetUrl : null
+            });
+        }
     }
 
     // ---------- RESET PASSWORD ----------
