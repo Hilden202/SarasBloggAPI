@@ -15,7 +15,8 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using System.IO;
 using System.Security.Claims;
-using Ganss.XSS;
+using AngleSharp.Dom;
+using Ganss.Xss;
 
 
 namespace SarasBloggAPI
@@ -234,7 +235,13 @@ namespace SarasBloggAPI
                 s.AllowedSchemes.UnionWith(new[] { "https","mailto" });
                 s.AllowedClasses.Clear();
                 s.AllowedClasses.UnionWith(new[] { "soft-box","sara-quote","image-collage" });
-                s.AttributeSanitizer = (tag, attr, value) => tag == "a" && attr == "rel" ? "noopener" : value;
+                s.PostProcessNode += (_, args) =>
+                {
+                    if (args.Node is IElement element && element.NodeName.Equals("A", StringComparison.OrdinalIgnoreCase))
+                    {
+                        element.SetAttribute("rel", "noopener");
+                    }
+                };
                 return s;
             });
 

@@ -4,7 +4,7 @@ using SarasBloggAPI.Models;
 using System;
 using Microsoft.AspNetCore.Authorization;
 using SarasBloggAPI.Services;
-using Ganss.XSS;
+using Ganss.Xss;
 
 
 namespace SarasBloggAPI.Controllers
