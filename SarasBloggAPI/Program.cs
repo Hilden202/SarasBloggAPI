@@ -15,6 +15,8 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using System.IO;
 using System.Security.Claims;
+using Ganss.XSS;
+using AngleSharp.Dom;
 
 
 namespace SarasBloggAPI
@@ -220,7 +222,66 @@ namespace SarasBloggAPI
             // API-KOMPONENTER
             builder.Services.AddControllers();
             builder.Services.AddEndpointsApiExplorer();
-            builder.Services.AddSwaggerGen();
+            builder.Services.AddSwaggerGen(options =>
+            {
+                options.EnableAnnotations();
+            });
+
+            builder.Services.AddSingleton<IHtmlSanitizer>(_ =>
+            {
+                var sanitizer = new HtmlSanitizer();
+
+                var allowedTags = new[]
+                {
+                    "p","h1","h2","h3","blockquote","ul","ol","li","figure","figcaption","hr","br",
+                    "strong","em","span","a","img"
+                };
+
+                sanitizer.AllowedTags.Clear();
+                foreach (var tag in allowedTags)
+                {
+                    sanitizer.AllowedTags.Add(tag);
+                }
+
+                var allowedAttributes = new[]
+                {
+                    "href","rel","src","alt","title","width","height","loading","decoding","class"
+                };
+
+                sanitizer.AllowedAttributes.Clear();
+                foreach (var attribute in allowedAttributes)
+                {
+                    sanitizer.AllowedAttributes.Add(attribute);
+                }
+
+                sanitizer.AllowedSchemes.Clear();
+                sanitizer.AllowedSchemes.Add("https");
+                sanitizer.AllowedSchemes.Add("mailto");
+
+                sanitizer.AllowRelativeUrls = true;
+
+                sanitizer.AllowedClasses.Clear();
+                sanitizer.AllowedClasses.Add("soft-box");
+                sanitizer.AllowedClasses.Add("sara-quote");
+                sanitizer.AllowedClasses.Add("image-collage");
+
+                sanitizer.PostProcessNode += (_, context) =>
+                {
+                    if (context.Node is IElement element &&
+                        element.TagName.Equals("A", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var relValue = element.GetAttribute("rel");
+                        var relTokens = (relValue ?? string.Empty)
+                            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                        relTokens.Add("noopener");
+                        element.SetAttribute("rel", string.Join(' ', relTokens));
+                    }
+                };
+
+                return sanitizer;
+            });
 
             // 🔹 Health checks (inkl. Postgres)
             builder.Services.AddHealthChecks().AddNpgSql(npgsqlCs);

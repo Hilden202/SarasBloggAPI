@@ -4,6 +4,7 @@ using SarasBloggAPI.Models;
 using System;
 using Microsoft.AspNetCore.Authorization;
 using SarasBloggAPI.Services;
+using Ganss.XSS;
 
 
 namespace SarasBloggAPI.Controllers
@@ -14,11 +15,13 @@ namespace SarasBloggAPI.Controllers
     {
         private readonly BloggManager _BloggManager;
         private readonly NewPostNotifier _notifier;
+        private readonly IHtmlSanitizer _sanitizer;
 
-        public BloggController(BloggManager bloggManager, NewPostNotifier notifier)
+        public BloggController(BloggManager bloggManager, NewPostNotifier notifier, IHtmlSanitizer sanitizer)
         {
             _BloggManager = bloggManager;
             _notifier = notifier;
+            _sanitizer = sanitizer;
         }
 
         // GET: api/blogg
@@ -48,6 +51,8 @@ namespace SarasBloggAPI.Controllers
         public async Task<IActionResult> Create([FromBody] Blogg blogg)
         {
 
+                blogg.Content = _sanitizer.Sanitize(blogg.Content ?? string.Empty);
+
                 var created = await _BloggManager.CreateAsync(blogg);
                 // Skicka mejl om inlägget är publikt direkt
                 if (!created.Hidden && !created.IsArchived)
@@ -64,6 +69,8 @@ namespace SarasBloggAPI.Controllers
         {
             if (id != updatedBlogg.Id)
                 return BadRequest();
+
+            updatedBlogg.Content = _sanitizer.Sanitize(updatedBlogg.Content ?? string.Empty);
 
             var result = await _BloggManager.UpdateAsync(updatedBlogg);
             return result ? NoContent() : NotFound();
