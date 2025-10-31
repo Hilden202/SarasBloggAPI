@@ -16,7 +16,6 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using System.IO;
 using System.Security.Claims;
 using Ganss.XSS;
-using AngleSharp.Dom;
 
 
 namespace SarasBloggAPI
@@ -227,60 +226,16 @@ namespace SarasBloggAPI
                 options.EnableAnnotations();
             });
 
-            builder.Services.AddSingleton<IHtmlSanitizer>(_ =>
+            builder.Services.AddSingleton<HtmlSanitizer>(_ =>
             {
-                var sanitizer = new HtmlSanitizer();
-
-                var allowedTags = new[]
-                {
-                    "p","h1","h2","h3","blockquote","ul","ol","li","figure","figcaption","hr","br",
-                    "strong","em","span","a","img"
-                };
-
-                sanitizer.AllowedTags.Clear();
-                foreach (var tag in allowedTags)
-                {
-                    sanitizer.AllowedTags.Add(tag);
-                }
-
-                var allowedAttributes = new[]
-                {
-                    "href","rel","src","alt","title","width","height","loading","decoding","class"
-                };
-
-                sanitizer.AllowedAttributes.Clear();
-                foreach (var attribute in allowedAttributes)
-                {
-                    sanitizer.AllowedAttributes.Add(attribute);
-                }
-
-                sanitizer.AllowedSchemes.Clear();
-                sanitizer.AllowedSchemes.Add("https");
-                sanitizer.AllowedSchemes.Add("mailto");
-
-                sanitizer.AllowRelativeUrls = true;
-
-                sanitizer.AllowedClasses.Clear();
-                sanitizer.AllowedClasses.Add("soft-box");
-                sanitizer.AllowedClasses.Add("sara-quote");
-                sanitizer.AllowedClasses.Add("image-collage");
-
-                sanitizer.PostProcessNode += (_, context) =>
-                {
-                    if (context.Node is IElement element &&
-                        element.TagName.Equals("A", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var relValue = element.GetAttribute("rel");
-                        var relTokens = (relValue ?? string.Empty)
-                            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-                        relTokens.Add("noopener");
-                        element.SetAttribute("rel", string.Join(' ', relTokens));
-                    }
-                };
-
-                return sanitizer;
+                var s = new HtmlSanitizer();
+                s.AllowedTags.UnionWith(new[] { "p","h1","h2","h3","blockquote","ul","ol","li","figure","figcaption","hr","br","strong","em","span","a","img" });
+                s.AllowedAttributes.UnionWith(new[] { "href","title","src","alt","width","height","loading","decoding","rel","class" });
+                s.AllowedSchemes.UnionWith(new[] { "https","mailto" });
+                s.AllowedClasses.Clear();
+                s.AllowedClasses.UnionWith(new[] { "soft-box","sara-quote","image-collage" });
+                s.AttributeSanitizer = (tag, attr, value) => tag == "a" && attr == "rel" ? "noopener" : value;
+                return s;
             });
 
             // 🔹 Health checks (inkl. Postgres)

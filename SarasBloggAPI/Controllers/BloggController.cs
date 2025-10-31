@@ -15,9 +15,9 @@ namespace SarasBloggAPI.Controllers
     {
         private readonly BloggManager _BloggManager;
         private readonly NewPostNotifier _notifier;
-        private readonly IHtmlSanitizer _sanitizer;
+        private readonly HtmlSanitizer _sanitizer;
 
-        public BloggController(BloggManager bloggManager, NewPostNotifier notifier, IHtmlSanitizer sanitizer)
+        public BloggController(BloggManager bloggManager, NewPostNotifier notifier, HtmlSanitizer sanitizer)
         {
             _BloggManager = bloggManager;
             _notifier = notifier;
