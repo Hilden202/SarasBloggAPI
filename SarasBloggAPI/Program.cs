@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Npgsql;
 using System.Net.Sockets;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.OpenApi.Models;
 using HealthChecks.NpgSql;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
@@ -225,6 +226,11 @@ namespace SarasBloggAPI
             builder.Services.AddSwaggerGen(options =>
             {
                 options.EnableAnnotations();
+                options.SwaggerDoc("v1", new OpenApiInfo
+                {
+                    Title = "SarasBloggAPI",
+                    Version = "v1"
+                });
             });
 
             builder.Services.AddSingleton<HtmlSanitizer>(_ =>
@@ -307,7 +313,11 @@ namespace SarasBloggAPI
                 (app.Environment.IsProduction() && swaggerEnabled))
             {
                 app.UseSwagger();
-                app.UseSwaggerUI();
+                app.UseSwaggerUI(options =>
+                {
+                    options.SwaggerEndpoint("/swagger/v1/swagger.json", "SarasBloggAPI v1");
+                    options.RoutePrefix = "swagger";
+                });
 
                 // HTTPS-redirect bara utanför riktig prod
                 if (!app.Environment.IsProduction())
