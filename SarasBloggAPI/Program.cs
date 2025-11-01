@@ -9,7 +9,6 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Npgsql;
 using System.Net.Sockets;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.OpenApi.Models;
 using HealthChecks.NpgSql;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
@@ -223,15 +222,7 @@ namespace SarasBloggAPI
             // API-KOMPONENTER
             builder.Services.AddControllers();
             builder.Services.AddEndpointsApiExplorer();
-            builder.Services.AddSwaggerGen(options =>
-            {
-                options.EnableAnnotations();
-                options.SwaggerDoc("v1", new OpenApiInfo
-                {
-                    Title = "SarasBloggAPI",
-                    Version = "v1"
-                });
-            });
+            builder.Services.AddSwaggerGen();
 
             builder.Services.AddSingleton<HtmlSanitizer>(_ =>
             {
@@ -306,17 +297,13 @@ namespace SarasBloggAPI
             var app = builder.Build();
 
             // MELLANVAROR & PIPELINE
-            var swaggerEnabled = builder.Configuration.GetValue<bool>("Swagger:Enabled");
-
-            if (app.Environment.IsDevelopment() ||
-                app.Environment.IsEnvironment("Test") ||
-                (app.Environment.IsProduction() && swaggerEnabled))
+            if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Test"))
             {
                 app.UseSwagger();
-                app.UseSwaggerUI(options =>
+                app.UseSwaggerUI(c =>
                 {
-                    options.SwaggerEndpoint("/swagger/v1/swagger.json", "SarasBloggAPI v1");
-                    options.RoutePrefix = "swagger";
+                    c.SwaggerEndpoint("/swagger/v1/swagger.json", "SarasBloggAPI v1");
+                    c.RoutePrefix = "swagger";
                 });
 
                 // HTTPS-redirect bara utanför riktig prod
