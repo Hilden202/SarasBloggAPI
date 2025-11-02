@@ -8,27 +8,12 @@ namespace SarasBloggAPI.Controllers
 {
     [ApiController]
     [Route("api/editor")]
+    [Authorize(Policy = "CanManageBlogs")]
     public class EditorUploadController : ControllerBase
     {
-        private static readonly HashSet<string> AllowedContentTypes = new(StringComparer.OrdinalIgnoreCase)
-        {
-            "image/png",
-            "image/jpeg",
-            "image/webp"
-        };
-
-        private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ".png",
-            ".jpg",
-            ".jpeg",
-            ".webp"
-        };
-
-        private const long MaxFileSizeBytes = 10L * 1024 * 1024;
-
         private readonly IFileHelper _fileHelper;
         private readonly ILogger<EditorUploadController> _logger;
+        private static readonly SemaphoreSlim _gate = new(1, 1); // säkert vid samtidiga writes
 
         public EditorUploadController(IFileHelper fileHelper, ILogger<EditorUploadController> logger)
         {
@@ -36,68 +21,59 @@ namespace SarasBloggAPI.Controllers
             _logger = logger;
         }
 
-        /// <summary>
-        /// Uploads an inline image for the TinyMCE editor.
-        /// </summary>
         [HttpPost("upload-image")]
-        [Authorize(Policy = "CanManageBlogs")]
-        [RequestFormLimits(MultipartBodyLengthLimit = MaxFileSizeBytes)]
-        [RequestSizeLimit(MaxFileSizeBytes)]
+        [RequestFormLimits(MultipartBodyLengthLimit = 10 * 1024 * 1024)]
+        [RequestSizeLimit(10 * 1024 * 1024)]
         [Consumes("multipart/form-data")]
-        [Produces("application/json")]
-        [ProducesResponseType(typeof(EditorImageUploadResponse), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        [ProducesResponseType(StatusCodes.Status403Forbidden)]
-        [ProducesResponseType(StatusCodes.Status415UnsupportedMediaType)]
-        [SwaggerOperation(
-            Summary = "Upload an inline editor image",
-            Description = "Example form-data request:\n\n```\nPOST /api/editor/upload-image\nAuthorization: Bearer <token>\nContent-Type: multipart/form-data\n\nfile: (binary PNG/JPEG/WEBP)\n```\n\nExample response:\n```json\n{ \"location\": \"https://cdn.example.com/media/editor/abc123.webp\" }\n```"
-        )]
-        public async Task<ActionResult<EditorImageUploadResponse>> Upload([FromForm] IFormFile? file)
+        [SwaggerOperation(Summary = "Ladda upp inbäddad TinyMCE-bild")]
+        public async Task<IActionResult> Upload([FromForm] EditorImageUploadDto dto, [FromQuery] int bloggId = 0)
         {
-            if (file is null)
-            {
-                return BadRequest(new { error = "File upload is required." });
-            }
+            var file = dto.File;
+            if (file == null || file.Length == 0)
+                return BadRequest("Ingen fil bifogad.");
 
-            if (file.Length == 0)
-            {
-                return BadRequest(new { error = "The uploaded file is empty." });
-            }
+            var allowedExt = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                { ".jpg", ".jpeg", ".png", ".webp" };
+            var allowedMime = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                { "image/jpeg", "image/png", "image/webp" };
 
-            if (file.Length > MaxFileSizeBytes)
-            {
-                return BadRequest(new { error = "Maximum allowed file size is 10 MB." });
-            }
+            var ext = Path.GetExtension(file.FileName);
+            if (!allowedExt.Contains(ext))
+                return BadRequest("Endast .jpg, .jpeg, .png, .webp tillåts.");
 
-            if (string.IsNullOrWhiteSpace(file.ContentType) || !AllowedContentTypes.Contains(file.ContentType))
-            {
-                return StatusCode(StatusCodes.Status415UnsupportedMediaType, new { error = "Only PNG, JPEG, or WEBP images are allowed." });
-            }
-
-            var extension = Path.GetExtension(file.FileName);
-            if (string.IsNullOrWhiteSpace(extension) || !AllowedExtensions.Contains(extension))
-            {
-                return StatusCode(StatusCodes.Status415UnsupportedMediaType, new { error = "Only PNG, JPEG, or WEBP images are allowed." });
-            }
+            if (!allowedMime.Contains(file.ContentType))
+                return BadRequest("Ogiltig MIME-typ: " + file.ContentType);
 
             try
             {
-                var location = await _fileHelper.SaveImageAsync(file, "editor");
+                await _gate.WaitAsync();
+                string? imageUrl;
 
-                if (string.IsNullOrWhiteSpace(location))
+                if (bloggId > 0)
                 {
-                    _logger.LogError("File helper returned an empty location for editor upload.");
-                    return StatusCode(StatusCodes.Status500InternalServerError, new { error = "Image upload failed." });
+                    // ?? Spara i blogg/{id}/text/
+                    var folderName = Path.Combine("blogg", bloggId.ToString(), "text");
+                    imageUrl = await _fileHelper.SaveImageAsync(file, bloggId, folderName);
+                }
+                else
+                {
+                    // ?? fallback: t.ex. "Om mig" (utan bloggId)
+                    imageUrl = await _fileHelper.SaveImageAsync(file, "editor");
                 }
 
-                return Ok(new EditorImageUploadResponse(location));
+                if (string.IsNullOrWhiteSpace(imageUrl))
+                    return StatusCode(500, "Fel vid uppladdning: tom URL.");
+
+                return Ok(new { location = imageUrl });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to upload editor image.");
-                return StatusCode(StatusCodes.Status500InternalServerError, new { error = "Image upload failed." });
+                _logger.LogError(ex, "Fel vid TinyMCE-uppladdning.");
+                return StatusCode(500, "Fel vid uppladdning: " + ex.Message);
+            }
+            finally
+            {
+                _gate.Release();
             }
         }
     }
