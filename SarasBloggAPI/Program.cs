@@ -15,6 +15,8 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using System.IO;
 using System.Security.Claims;
+using AngleSharp.Dom;
+using Ganss.Xss;
 
 
 namespace SarasBloggAPI
@@ -222,6 +224,24 @@ namespace SarasBloggAPI
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
 
+            builder.Services.AddSingleton<HtmlSanitizer>(_ =>
+            {
+                var s = new HtmlSanitizer();
+                s.AllowedTags.UnionWith(new[] { "p","h1","h2","h3","blockquote","ul","ol","li","figure","figcaption","hr","br","strong","em","span","a","img" });
+                s.AllowedAttributes.UnionWith(new[] { "href","title","src","alt","width","height","loading","decoding","rel","class" });
+                s.AllowedSchemes.UnionWith(new[] { "https","mailto" });
+                s.AllowedClasses.Clear();
+                s.AllowedClasses.UnionWith(new[] { "soft-box","sara-quote","image-collage" });
+                s.PostProcessNode += (_, args) =>
+                {
+                    if (args.Node is IElement element && element.NodeName.Equals("A", StringComparison.OrdinalIgnoreCase))
+                    {
+                        element.SetAttribute("rel", "noopener");
+                    }
+                };
+                return s;
+            });
+
             // 🔹 Health checks (inkl. Postgres)
             builder.Services.AddHealthChecks().AddNpgSql(npgsqlCs);
 
@@ -277,14 +297,14 @@ namespace SarasBloggAPI
             var app = builder.Build();
 
             // MELLANVAROR & PIPELINE
-            var swaggerEnabled = builder.Configuration.GetValue<bool>("Swagger:Enabled");
-
-            if (app.Environment.IsDevelopment() ||
-                app.Environment.IsEnvironment("Test") ||
-                (app.Environment.IsProduction() && swaggerEnabled))
+            if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Test"))
             {
                 app.UseSwagger();
-                app.UseSwaggerUI();
+                app.UseSwaggerUI(c =>
+                {
+                    c.SwaggerEndpoint("/swagger/v1/swagger.json", "SarasBloggAPI v1");
+                    c.RoutePrefix = "swagger";
+                });
 
                 // HTTPS-redirect bara utanför riktig prod
                 if (!app.Environment.IsProduction())
