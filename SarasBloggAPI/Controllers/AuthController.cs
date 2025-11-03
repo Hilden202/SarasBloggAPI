@@ -121,11 +121,11 @@ public class AuthController : ControllerBase
         {
             if (mode.Equals("Prod", StringComparison.OrdinalIgnoreCase))
             {
-                var subject = "Bekräfta din e-post till SarasBlogg";
+                var subject = "Bekräfta din e-post till Med Hjärtat som Kompass";
                 var html = $@"<p>Hej!</p>
                       <p>Bekräfta din e-post genom att klicka på länken nedan:</p>
                       <p><a href=""{confirmUrl}"">Bekräfta min e-post</a></p>
-                      <p>Hälsningar,<br/>SarasBlogg</p>";
+                      <p>Hälsningar,<br/>Med Hjärtat som Kompass</p>";
 
                 await _emailSender.SendAsync(user.Email!, subject, html);
                 _logger.LogInformation("Register: email queued to {Email}", user.Email);
@@ -275,7 +275,7 @@ public class AuthController : ControllerBase
 
         await _emailSender.SendAsync(
             to: user.Email!,
-            subject: "Bekräfta din e-post till SarasBlogg",
+            subject: "Bekräfta din e-post till Med Hjärtat som Kompass",
             htmlBody: $@"<p>Hej {user.UserName},</p>
                  <p>Bekräfta din e-post genom att klicka här:</p>
                  <p><a href=""{confirmUrl}"">Bekräfta e-post</a></p>");
@@ -324,7 +324,7 @@ public class AuthController : ControllerBase
         <p>Klicka på länken nedan för att välja ett nytt lösenord:</p>
         <p><a href=""{resetUrl}"">Återställ lösenord</a></p>
         <p>Om du inte begärt detta kan du ignorera mejlet.</p>
-        <p>Hälsningar,<br/>SarasBlogg</p>";
+        <p>Hälsningar,<br/>Med Hjärtat som Kompass</p>";
 
         var mode = _cfg["Email:Mode"] ?? "Dev";
         var exposeFallbackLink = _cfg.GetValue("Auth:ExposeConfirmLinkInResponse", true);
@@ -535,7 +535,5 @@ public class AuthController : ControllerBase
         // sätt även UserName om du vill spegla e-posten: await _userManager.SetUserNameAsync(user, newEmail);
         return Ok(new BasicResultDto { Succeeded = true, Message = "Email changed." });
     }
-
-
 
 }
