@@ -7,6 +7,10 @@
     <UserSecretsId>b4af2d75-7656-4700-97b0-89a6b08246c4</UserSecretsId>
   </PropertyGroup>
 
+  <PropertyGroup Condition=" '$(RunConfiguration)' == 'https' " />
+  <PropertyGroup Condition=" '$(RunConfiguration)' == 'http' " />
+  <PropertyGroup Condition=" '$(RunConfiguration)' == 'SarasBloggAPI (Test)' " />
+  <PropertyGroup Condition=" '$(RunConfiguration)' == 'SarasBloggAPI (Prod)' " />
   <ItemGroup>
     <PackageReference Include="AspNetCore.HealthChecks.NpgSql" Version="8.0.2" />
     <PackageReference Include="AspNetCore.HealthChecks.UI.Client" Version="8.0.1" />

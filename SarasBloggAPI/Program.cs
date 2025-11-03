@@ -27,6 +27,10 @@ namespace SarasBloggAPI
         {
             var builder = WebApplication.CreateBuilder(args);
             var isLocalTest = builder.Environment.IsEnvironment("Test");
+            if (builder.Environment.IsDevelopment() || isLocalTest)
+            {
+                builder.Configuration.AddUserSecrets<Program>();
+            }
 
             // ---- CORS origins: stöd både Array-sektion och CSV-sträng ----
             string[] originsFromArray = builder.Configuration
