@@ -536,4 +536,72 @@ public class AuthController : ControllerBase
         return Ok(new BasicResultDto { Succeeded = true, Message = "Email changed." });
     }
 
+    // ---------- SEND RESET LINK (SUPERADMIN) ----------
+    [Authorize(Roles = "superadmin")]
+    [HttpPost("send-reset-link")]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    public async Task<IActionResult> SendResetLink([FromBody] EmailDto dto)
+    {
+        if (dto is null || string.IsNullOrWhiteSpace(dto.Email))
+            return BadRequest(new { sent = false, message = "Email required" });
+
+        // Förhindra att systemkontot hanteras
+        if (dto.Email.Equals("admin@sarasblogg.se", StringComparison.OrdinalIgnoreCase))
+            return Forbid();
+
+        var user = await _userManager.FindByEmailAsync(dto.Email);
+        if (user is null)
+            return NotFound(new { sent = false, message = "User not found" });
+
+        // Skapa återställningslänk
+        var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+        var tokenEncoded = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+
+        var frontendBase = _cfg["Frontend:BaseUrl"] ?? "https://sarasblogg.onrender.com";
+        var resetUrl = $"{frontendBase}/Identity/Account/ResetPassword?userId={user.Id}&token={tokenEncoded}";
+
+        var mode = _cfg["Email:Mode"] ?? "Dev";
+        if (!mode.Equals("Prod", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation("SendResetLink: dev/test mode, exposing reset link");
+            return Ok(new BasicResultDto
+            {
+                Succeeded = true,
+                Message = "Reset link generated (dev/test mode).",
+                ConfirmEmailUrl = resetUrl
+            });
+        }
+        // 📧 Prod-läge → försök skicka via SendGrid
+        _logger.LogInformation("SendResetLink: prod mode, attempting email send...");
+        try
+        {
+            var subject = "Återställ lösenord (initierad av administratör)";
+            var html = $@"<p>Hej {System.Net.WebUtility.HtmlEncode(user.UserName)},</p>
+                  <p>En administratör har initierat en återställning av ditt lösenord.</p>
+                  <p>Klicka här för att återställa det:</p>
+                  <p><a href=""{resetUrl}"">Återställ lösenord</a></p>
+                  <p>Hälsningar,<br/>Med Hjärtat som Kompass</p>";
+
+            await _emailSender.SendAsync(user.Email!, subject, html);
+            _logger.LogInformation("SendResetLink: email queued to {Email}", user.Email);
+
+            return Ok(new BasicResultDto
+            {
+                Succeeded = true,
+                Message = "Reset link sent to user."
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "SendResetLink: email send failed to {Email}", user.Email);
+            // Fallback → returnera länken så att admin kan skicka manuellt
+            return Ok(new BasicResultDto
+            {
+                Succeeded = true,
+                Message = "Reset link generated (fallback mode).",
+                ConfirmEmailUrl = resetUrl
+            });
+        }
+    }
+
 }
